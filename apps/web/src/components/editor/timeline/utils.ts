@@ -1,5 +1,7 @@
 import { Film, Volume2, Image, Type, Shapes, Layers } from "@/icons/lucide-compat";
 import type { Track } from "@openreel/core";
+import { isStudioEmbed } from "../../../studio/params";
+import { studioClipSnapPoints } from "../../../studio/presets/snap";
 import type {
   SnapPoint,
   SnapResult,
@@ -41,6 +43,11 @@ export const calculateSnap = (
     snapPoints.push({ time: playheadPosition, type: "playhead" });
   }
 
+  // Character Studio embed: beats and markers (the suggested spots) too.
+  if (isStudioEmbed()) {
+    for (const time of studioClipSnapPoints()) snapPoints.push({ time, type: "marker" });
+  }
+
   if (snapSettings.snapToGrid) {
     const nearestGrid =
       Math.round(rawTime / snapSettings.gridSize) * snapSettings.gridSize;
@@ -57,6 +64,7 @@ export const calculateSnap = (
     "clip-start": 0,
     "clip-end": 0,
     "playhead": 1,
+    "marker": 1,
     "grid": 2,
   };
 

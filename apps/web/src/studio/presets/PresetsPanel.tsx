@@ -2,12 +2,15 @@ import React, { useState } from "react";
 import { PRESETS, type PresetCategory, type PresetStrength } from "@openreel/core/studio";
 import { useTimelineStore } from "../../stores/timeline-store";
 import { applyPreset, playhead } from "./actions";
+import { nearBeat } from "./beat";
+import { BeatCard, StylesCard } from "./StudioCards";
 import { usePresetUi } from "./state";
 
 // The Presets panel (Character Studio embed): the edit library as moving
 // thumbnails with one line each. A click drops the preset at the playhead
-// (a transition snaps to the nearest cut); the Studio's suggested spots
-// move the playhead there in one click. Nothing is placed without a click.
+// (a transition snaps to the nearest cut, a moment to a beat close by);
+// the Studio's suggested spots move the playhead there in one click.
+// Nothing is placed without a click. Beat and Styles sit above the library.
 
 const GROUPS: Array<[PresetCategory, string]> = [
   ["transition", "Transitions (on a cut)"],
@@ -28,7 +31,8 @@ export const StudioPresetsPanel: React.FC = () => {
   async function place(id: string) {
     setBusy(id);
     say(null);
-    const r = await applyPreset(id, strength, playhead());
+    // On a beat when the playhead is just off one (a transition finds its cut).
+    const r = await applyPreset(id, strength, nearBeat(playhead()));
     setBusy(null);
     say({ tone: r.ok ? "ok" : "bad", text: r.message });
     if (r.layerId) select(r.layerId);
@@ -64,6 +68,9 @@ export const StudioPresetsPanel: React.FC = () => {
       {status && (
         <div role="status" className={`rounded-md px-2 py-1.5 text-xs ${status.tone === "ok" ? "bg-primary/10 text-text-primary" : "bg-red-500/10 text-red-400"}`}>{status.text}</div>
       )}
+
+      <BeatCard />
+      <StylesCard />
 
       {GROUPS.map(([cat, title]) => {
         const list = PRESETS.filter((p) => p.category === cat);

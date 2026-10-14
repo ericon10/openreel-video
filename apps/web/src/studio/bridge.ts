@@ -3,8 +3,12 @@ import { getExportEngine } from "@openreel/core";
 import { useProjectStore } from "../stores/project-store";
 import type { StudioParams } from "./params";
 import { memoryFile } from "./sink";
+import type { SavedStyle, StyleItem } from "@openreel/core/studio";
 import { applyPreset, cutoutIds, restoreCutouts } from "./presets/actions";
 import { orderStudioTracks } from "./presets/order";
+import { exportProject, findBeatsInMusic, getMusicInExport, markMusic, musicMediaIds, restoreBeats, savedBeats, type SavedBeats } from "./presets/beat";
+import { appliedPresets, clearApplied, restoreApplied, type AppliedPreset } from "./presets/log";
+import { applyStack, currentStack } from "./presets/styles";
 
 // The Studio side of the editor: load a post onto the timeline, and save
 // the export and the project back to the post. The Studio is the source of
@@ -38,9 +42,23 @@ export interface StudioManifest {
   suggestions?: Array<{ label: string; time: number; why: string }>;
   // The post's Format from the Idea step: a preset placed on first open.
   format?: { preset: string; strength: "subtle" | "normal" | "strong" } | null;
+  // A stack carried from "Make another like this": placed on first open.
+  stack?: StyleItem[] | null;
+  // The account's saved styles, for the Presets tab.
+  styles?: SavedStyle[];
   // The saved editor project (media blobs left out), when the post was
   // edited before.
-  project: (Project & { studioMedia?: Record<string, string>; studioCutouts?: string[] }) | null;
+  project: (Project & StudioExtras) | null;
+}
+
+// What the embed keeps in the project JSON beside OpenReel's own fields.
+interface StudioExtras {
+  studioMedia?: Record<string, string>;
+  studioCutouts?: string[];
+  studioBeats?: SavedBeats | null;
+  studioMusic?: string[];
+  studioMusicInExport?: boolean;
+  studioApplied?: AppliedPreset[];
 }
 
 async function json<T>(res: Response): Promise<T> {
@@ -83,10 +101,12 @@ async function assemble(manifest: StudioManifest, onStep: (s: string) => void): 
   const { width, height, fps } = manifest.canvas;
   store().createNewProject(manifest.post.title || "Studio post", { width, height, frameRate: fps });
   const ids: Record<string, string> = {};
+  clearApplied();
   for (const [i, m] of manifest.media.entries()) {
     onStep(`Loading ${m.name} (${i + 1} of ${manifest.media.length})...`);
     const mediaId = await importOne(m);
     ids[mediaId] = m.id;
+    if (m.role === "music") markMusic(mediaId);
     const placed = await store().placeMediaClip(mediaId, undefined, m.start);
     if (!placed.success) throw new Error(`${m.name}: ${placed.error?.message ?? "could not be placed"}`);
     const clip = store().project.timeline.tracks.flatMap((t) => t.clips).find((c) => c.mediaId === mediaId);
@@ -106,9 +126,17 @@ async function assemble(manifest: StudioManifest, onStep: (s: string) => void): 
       }
     }
   }
-  // The suggested spots as markers, and the post's Format placed once.
+  // The suggested spots as markers; the beat of the post's music.
   for (const spot of manifest.suggestions ?? []) await store().addMarker(spot.time, spot.label, "#ff6a3d");
-  if (manifest.format) {
+  if (musicMediaIds().length) {
+    onStep("Finding the beat in the music...");
+    await findBeatsInMusic();
+  }
+  // A stack carried from the post this one was made like, else the Format.
+  if (manifest.stack?.length) {
+    onStep("Placing the presets from the post this is like...");
+    await applyStack(manifest.stack);
+  } else if (manifest.format) {
     onStep("Placing the format's edit...");
     const payoff = manifest.suggestions?.find((x) => /payoff/i.test(x.label))?.time ?? Math.max(0, manifest.duration - 2);
     await applyPreset(manifest.format.preset, manifest.format.strength, payoff);
@@ -134,6 +162,11 @@ async function reopen(manifest: StudioManifest, onStep: (s: string) => void): Pr
     onStep("Loading the person cutout...");
     await restoreCutouts(saved.studioCutouts);
   }
+  restoreBeats({ beats: saved.studioBeats, music: saved.studioMusic, musicInExport: saved.studioMusicInExport });
+  // Spots the Studio suggests now that this timeline does not mark yet.
+  const marked = new Set(store().project.timeline.markers.map((m) => (m.label ?? "").toLowerCase()));
+  for (const spot of manifest.suggestions ?? []) if (!marked.has(spot.label.toLowerCase())) await store().addMarker(spot.time, spot.label, "#ff6a3d");
+  restoreApplied(saved.studioApplied);
   return map;
 }
 
@@ -152,6 +185,10 @@ export function projectForStudio(media: Record<string, string>): unknown {
     ...project,
     studioMedia: media,
     studioCutouts: cutoutIds(),
+    studioBeats: savedBeats(),
+    studioMusic: musicMediaIds(),
+    studioMusicInExport: getMusicInExport(),
+    studioApplied: appliedPresets(),
     mediaLibrary: {
       items: project.mediaLibrary.items.map((i) => ({
         ...i, blob: null, fileHandle: null, thumbnailUrl: null, waveformData: null, filmstripThumbnails: [],
@@ -197,7 +234,8 @@ export async function saveToStudio(p: StudioParams, media: Record<string, string
   const f = await exportFormat(width, height, frameRate);
   onStep("Exporting the video...");
   const file = memoryFile();
-  const gen = engine.exportVideo(project, {
+  // Music tracks left out when "Music in the export" is off.
+  const gen = engine.exportVideo(exportProject(project), {
     format: f.format, codec: f.codec, width, height, frameRate, bitrate: 12000, bitrateMode: "vbr", quality: 85, keyframeInterval: 2,
     audioSettings: { format: f.audio, sampleRate: 48000, bitDepth: 16, bitrate: 192000, channels: 2 },
   }, file.writable);
@@ -215,6 +253,6 @@ export async function saveToStudio(p: StudioParams, media: Record<string, string
   const uploadId = await upload(p, blob, `${p.post}-edit.${f.format}`);
   await json(await fetch(`${p.api}/content/${p.post}/editor`, {
     method: "POST", credentials: "same-origin", headers: { "content-type": "application/json", "x-studio-request": "1" },
-    body: JSON.stringify({ uploadId, project: projectForStudio(media) }),
+    body: JSON.stringify({ uploadId, project: projectForStudio(media), stack: currentStack() }),
   }));
 }

@@ -5,6 +5,7 @@ import { useProjectStore } from "../../stores/project-store";
 import { useTimelineStore } from "../../stores/timeline-store";
 import { useEngineStore } from "../../stores/engine-store";
 import { PRESETS_TRACK } from "./order";
+import { logApplied } from "./log";
 
 // What each preset does to the timeline (Character Studio embed). Camera
 // presets become blocks on the Presets track (adjustment layers carrying
@@ -300,13 +301,13 @@ export async function applyPreset(id: string, strength: PresetStrength, at = pla
   const def = presetById(id);
   if (!def) return { ok: false, message: "That preset is not in this version of the editor." };
   try {
-    switch (def.kind) {
-      case "camera": return await applyCamera(def, strength, at);
-      case "time": return await applyTime(def, strength, at);
-      case "text": return await applyText(def, at);
-      case "caption": return await applyCaptionLook(def);
-      case "layout": return await applyLayout(def, at);
-    }
+    if (def.kind === "camera") return await applyCamera(def, strength, at);
+    const r = def.kind === "time" ? await applyTime(def, strength, at)
+      : def.kind === "text" ? await applyText(def, at)
+      : def.kind === "caption" ? await applyCaptionLook(def)
+      : await applyLayout(def, at);
+    if (r.ok) logApplied({ preset: def.id, strength, at });
+    return r;
   } catch (e) {
     return { ok: false, message: (e as Error).message || "The preset could not be placed." };
   }

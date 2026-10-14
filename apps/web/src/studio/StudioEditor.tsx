@@ -7,6 +7,8 @@ import { useThemeStore } from "../stores/theme-store";
 import { PresetInspector } from "./presets/PresetInspector";
 import { usePresetUi } from "./presets/state";
 import { cuts } from "./presets/actions";
+import { setStylesApi } from "./presets/styles";
+import { rippleOn, setRipple } from "./presets/ripple";
 import type { StudioParams } from "./params";
 
 // The editor opened from a Studio post: the post goes onto the timeline,
@@ -29,6 +31,7 @@ const btn = (primary: boolean): React.CSSProperties => ({
 export function StudioEditor({ params }: { params: StudioParams }) {
   const [phase, setPhase] = useState<Phase>({ kind: "loading", step: "Opening the post..." });
   const [title, setTitle] = useState("");
+  const [ripple, setRippleState] = useState(rippleOn());
   const media = useRef<Record<string, string>>({});
   const started = useRef(false);
 
@@ -38,6 +41,8 @@ export function StudioEditor({ params }: { params: StudioParams }) {
       const r = await openPost(params, (step) => setPhase({ kind: "loading", step }));
       media.current = r.media;
       setTitle(r.manifest.post.title);
+      setStylesApi(params.api);
+      usePresetUi.getState().setStyles(r.manifest.styles ?? []);
       // Suggested spots: the Studio's (the payoff) and every cut.
       usePresetUi.getState().setSpots([
         ...(r.manifest.suggestions ?? []),
@@ -81,6 +86,10 @@ export function StudioEditor({ params }: { params: StudioParams }) {
         <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", opacity: 0.85 }}>
           {phase.kind === "error" ? <span style={{ color: "#ff8a6a" }}>{phase.message}</span> : busy ? phase.step : title ? `Editing: ${title}` : "Editing"}
         </span>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, opacity: 0.85 }} title="Trim a shot shorter and the shots after it slide over, so no gap opens">
+          <input type="checkbox" checked={ripple} onChange={(e) => { setRipple(e.target.checked); setRippleState(e.target.checked); }} />
+          Ripple trim
+        </label>
         {phase.kind === "error" && <button type="button" style={btn(false)} onClick={() => void (phase.retry === "open" ? open() : done())}>Retry</button>}
         <button type="button" style={btn(true)} disabled={phase.kind !== "ready" && !(phase.kind === "error" && phase.retry === "save")} onClick={() => void done()} aria-busy={phase.kind === "saving"}>
           {phase.kind === "saving" ? "Saving..." : "Done"}

@@ -17,6 +17,8 @@ only these small hooks:
 | `apps/web/src/components/editor/AssetsPanel.tsx` | A Presets tab (the default tab in the Studio) |
 | `apps/web/src/components/editor/timeline/TrackLane.tsx` | A preset block renders as `PresetBlock` (drag, trim, select) |
 | `apps/web/src/components/editor/Toolbar.tsx` | OpenReel's Export is hidden in the Studio; Done exports |
+| `apps/web/src/components/editor/timeline/utils.ts` | Clips also snap to beats and markers in the Studio |
+| `apps/web/src/components/editor/timeline/ClipComponent.tsx` | Ripple trim after a trim gesture (`studio/presets/ripple.ts`) |
 
 How it works: the Studio serves the built editor at `/editor/` with
 cross-origin isolation headers and opens it as
@@ -38,6 +40,17 @@ Time presets use OpenReel's speed engine (ramps, freeze, reverse); text
 presets use its text animations, behind-subject text and karaoke
 subtitles; layouts use transforms, crops and the person cutout. Track
 order: captions, Presets, footage, audio (`apps/web/src/studio/presets/order.ts`).
+
+Beat sync (`apps/web/src/studio/presets/beat.ts`): the beat of the post's
+music (found when the editor opens), of a track added in the Beat card, a
+tapped tempo or a typed BPM, shown with OpenReel's beat overlay; clips and
+preset blocks snap to beats; "Music in the export" mutes the music tracks
+in the export. Saved styles (`packages/core/src/studio/style.ts`,
+`apps/web/src/studio/presets/styles.ts`): the presets as a stack with
+relative places (payoff, cut, beat, start, end), saved per account in the
+Studio and carried by "Make another like this". Beats, music, the export
+switch and the non-block presets are saved in the project JSON
+(`studioBeats`, `studioMusic`, `studioMusicInExport`, `studioApplied`).
 
 Build (from the Studio repo): `npm run build:editor`. License: MIT
 (Augustus Otu and Contributors); the Studio shows it in Settings, Notices.

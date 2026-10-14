@@ -21,6 +21,8 @@ import {
 } from "../panels/EffectsTransitionsPanel";
 import { parseEditorEffectDropPayload } from "./effect-drop";
 import { getVisibleRepeatRange } from "./visible-repeat-range";
+import { isStudioEmbed } from "../../../studio/params";
+import { rippleAfterTrim } from "../../../studio/presets/ripple";
 
 interface ClipComponentProps {
   clip: Clip;
@@ -672,6 +674,8 @@ export const ClipComponent: React.FC<ClipComponentProps> = ({
       setIsTrimming(false);
       setTrimEdge(null);
       document.body.style.cursor = "";
+      // Character Studio embed: ripple trim closes the gap after a shot.
+      if (isStudioEmbed()) void rippleAfterTrim(clip.id, trimEdge, { startTime: trimStartRef.current.startTime, duration: trimStartRef.current.duration });
     };
 
     const stopListening = listenTimelineGesture(touchGesture.pointerId, handleMouseMove, handleMouseUp);
