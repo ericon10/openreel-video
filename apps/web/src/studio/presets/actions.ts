@@ -224,17 +224,28 @@ async function applyText(def: PresetDef, at: number): Promise<PresetResult> {
 }
 
 export const UPPER_THIRD = 0.26;
+const UPPER_THIRD_Y = UPPER_THIRD;
+
+// The Studio's caption places (config/content.yaml caption.position).
+const PLACES: Record<string, number> = { top: 0.16, upper_third: UPPER_THIRD_Y, middle: 0.5, bottom: 0.7 };
+
+// Box (TikTok's white box) or outline (TikTok Classic), at a place.
+export function styleCaptions(look: "box" | "outline", place = "upper_third"): number {
+  const all = textClips();
+  for (const c of all) {
+    store().updateTextStyle(c.id, look === "box"
+      ? { color: "#000000", backgroundColor: "#ffffff", strokeWidth: 0, fontWeight: 800 }
+      : { color: "#ffffff", backgroundColor: "rgba(0,0,0,0)", strokeColor: "#000000", strokeWidth: 10, fontWeight: 800 });
+    store().updateTextTransform(c.id, { position: { x: 0.5, y: PLACES[place] ?? UPPER_THIRD_Y } });
+  }
+  return all.length;
+}
 
 async function applyCaptionLook(def: PresetDef): Promise<PresetResult> {
   const all = textClips();
   if (!all.length) return { ok: false, message: "Add a caption first." };
-  for (const c of all) {
-    store().updateTextStyle(c.id, def.look === "box"
-      ? { color: "#000000", backgroundColor: "#ffffff", strokeWidth: 0, fontWeight: 800 }
-      : { color: "#ffffff", backgroundColor: "rgba(0,0,0,0)", strokeColor: "#000000", strokeWidth: 10, fontWeight: 800 });
-    // Upper third, clear of TikTok's buttons on the right and its caption at the bottom.
-    store().updateTextTransform(c.id, { position: { x: 0.5, y: UPPER_THIRD } });
-  }
+  // Upper third, clear of TikTok's buttons on the right and its caption at the bottom.
+  styleCaptions(def.look === "box" ? "box" : "outline");
   return { ok: true, message: `${def.label} on ${all.length === 1 ? "the caption" : `all ${all.length} captions`}, in the upper third.` };
 }
 

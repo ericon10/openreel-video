@@ -4,7 +4,7 @@ import { useProjectStore } from "../stores/project-store";
 import type { StudioParams } from "./params";
 import { memoryFile } from "./sink";
 import type { SavedStyle, StyleItem } from "@openreel/core/studio";
-import { applyPreset, cutoutIds, restoreCutouts } from "./presets/actions";
+import { applyPreset, cutoutIds, restoreCutouts, styleCaptions } from "./presets/actions";
 import { orderStudioTracks } from "./presets/order";
 import { exportProject, findBeatsInMusic, getMusicInExport, markMusic, musicMediaIds, restoreBeats, savedBeats, type SavedBeats } from "./presets/beat";
 import { appliedPresets, clearApplied, restoreApplied, type AppliedPreset } from "./presets/log";
@@ -37,6 +37,8 @@ export interface StudioManifest {
   canvas: { width: number; height: number; fps: number };
   media: StudioMedia[];
   captions: StudioCaption[];
+  // The post's caption look and place (the Studio's default otherwise).
+  captionLook?: { style: "box" | "outline"; position: string };
   duration: number;
   // Spots the Studio suggests (the payoff); one click moves the playhead.
   suggestions?: Array<{ label: string; time: number; why: string }>;
@@ -124,6 +126,8 @@ async function assemble(manifest: StudioManifest, onStep: (s: string) => void): 
           fontSize: 64, fontWeight: 800, color: "#ffffff", strokeColor: "#000000", strokeWidth: 6, textAlign: "center",
         });
       }
+      // The same look and place the Studio's own render gives them.
+      styleCaptions(manifest.captionLook?.style ?? "box", manifest.captionLook?.position ?? "upper_third");
     }
   }
   // The suggested spots as markers; the beat of the post's music.
