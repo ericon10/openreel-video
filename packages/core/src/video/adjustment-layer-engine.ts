@@ -1,4 +1,5 @@
 import type { Effect, Transform } from "../types/timeline";
+import type { StudioPresetData } from "../studio/presets";
 import type { BlendMode } from "./types";
 
 export type { BlendMode };
@@ -15,6 +16,8 @@ export interface AdjustmentLayer {
   enabled: boolean;
   affectedTracks: string[] | "all";
   transform: Transform;
+  // Character Studio embed: a preset block (camera keys, strength).
+  studio?: StudioPresetData;
 }
 
 export interface CreateAdjustmentLayerOptions {

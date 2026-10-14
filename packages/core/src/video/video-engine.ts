@@ -63,6 +63,7 @@ import {
 import { GPUCompositor, initializeGPUCompositor } from "./gpu-compositor";
 import { getRendererFactory, type Renderer } from "./renderer-factory";
 import { keyframeEngine } from "./keyframe-engine";
+import { applyStudioCamera, applyStudioTrack, studioLayerOrphaned } from "../studio/camera";
 import { getBackgroundRemovalEngine } from "../ai/background-removal-engine";
 import {
   type GifFrameCache,
@@ -728,6 +729,8 @@ export class VideoEngine {
     );
 
     for (const { track } of allRenderableTracks) {
+      // Character Studio embed: presets on this track move the tracks below.
+      applyStudioTrack(ctx, project.adjustmentLayers, track.id, time, width, height);
       {
         // If a clip-to-clip transition is active in this track at `time`,
         // decode both participating clips, blend them, and draw the result.
@@ -1098,6 +1101,7 @@ export class VideoEngine {
       time,
       width,
       height,
+      new Set(project.timeline.tracks.map((t) => t.id)),
     );
 
     const imageBitmap = await createImageBitmap(canvas);
@@ -1166,6 +1170,7 @@ export class VideoEngine {
     time: number,
     width: number,
     height: number,
+    trackIds: ReadonlySet<string> = new Set(),
   ): Promise<void> {
     for (const layer of layers) {
       if (
@@ -1174,6 +1179,11 @@ export class VideoEngine {
         time < layer.startTime ||
         time >= layer.startTime + layer.duration
       ) continue;
+      // Character Studio embed: a preset block moves the frame below it.
+      if (layer.studio) {
+        if (studioLayerOrphaned(layer, trackIds)) applyStudioCamera(ctx, layer, time, width, height);
+        continue;
+      }
       const effects = layer.effects.filter((effect) => effect.enabled !== false);
       if (effects.length === 0) continue;
 

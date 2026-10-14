@@ -5,6 +5,8 @@ import {
   RefreshCw, Palette, Sparkles, Video,
   Type, Shapes, Wand2, LayoutTemplate, Zap, Shuffle,
 } from "@/icons/lucide-compat";
+import { isStudioEmbed } from "../../studio/params";
+import { StudioPresetsPanel } from "../../studio/presets/PresetsPanel";
 import {
   BACKGROUND_PRESETS,
   generateBackgroundBlob,
@@ -52,6 +54,7 @@ const formatDuration = (seconds: number): string => {
 type MediaViewMode = "large" | "small" | "list";
 type AssetsTab =
   | "media"
+  | "presets"
   | "text"
   | "graphics"
   | "effects"
@@ -64,11 +67,17 @@ const ASSETS_TABS: ReadonlyArray<{
   value: AssetsTab;
   label: string;
   description: string;
-}> = [
+}> = ([
   {
     value: "media",
     label: "Media",
     description: "Import footage, audio, and stills.",
+  },
+  // Character Studio embed: the Studio's edit presets.
+  {
+    value: "presets",
+    label: "Presets",
+    description: "Studio edits: click to drop one at the playhead.",
   },
   {
     value: "text",
@@ -105,7 +114,7 @@ const ASSETS_TABS: ReadonlyArray<{
     label: "Project Templates",
     description: "Load full-project starter layouts and presets.",
   },
-] as const;
+] satisfies ReadonlyArray<{ value: AssetsTab; label: string; description: string }>).filter((tab) => tab.value !== "presets" || isStudioEmbed());
 
 export const DEFAULT_TITLE_STYLE: Partial<TextStyle> = {
   fontSize: 96,
@@ -193,6 +202,7 @@ export const TEXT_STYLE_PRESETS: ReadonlyArray<{
 
 const TAB_ICONS: Record<AssetsTab, React.ElementType> = {
   media: Video,
+  presets: Film,
   text: Type,
   graphics: Shapes,
   effects: Zap,
@@ -630,7 +640,7 @@ const LoadingIndicator: React.FC<{ message: string }> = ({ message }) => (
 
 export const AssetsPanel: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [activeTab, setActiveTabRaw] = useState<AssetsTab>("media");
+  const [activeTab, setActiveTabRaw] = useState<AssetsTab>(isStudioEmbed() ? "presets" : "media");
   const ttsHasUnsaved = useTtsAudioStore((s) => s.generatedAudio !== null && !s.isAudioSaved);
   const playheadPosition = useTimelineStore((state) => state.playheadPosition);
   const selectedIds = useUIStore((state) => state.selectedItems);
@@ -1486,6 +1496,12 @@ export const AssetsPanel: React.FC = () => {
                 </div>
               </div>
             </div>
+          </div>
+        );
+      case "presets":
+        return (
+          <div className="flex min-h-0 flex-1 flex-col border-t border-border/70 bg-bg-1">
+            <StudioPresetsPanel />
           </div>
         );
       case "effects":

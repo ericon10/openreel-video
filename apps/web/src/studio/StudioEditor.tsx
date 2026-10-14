@@ -3,6 +3,10 @@ import App from "../App";
 import { useUIStore } from "../stores/ui-store";
 import { openPost, saveToStudio } from "./bridge";
 import { ONBOARDING_KEY } from "../components/editor/tour/tour-steps";
+import { useThemeStore } from "../stores/theme-store";
+import { PresetInspector } from "./presets/PresetInspector";
+import { usePresetUi } from "./presets/state";
+import { cuts } from "./presets/actions";
 import type { StudioParams } from "./params";
 
 // The editor opened from a Studio post: the post goes onto the timeline,
@@ -34,6 +38,11 @@ export function StudioEditor({ params }: { params: StudioParams }) {
       const r = await openPost(params, (step) => setPhase({ kind: "loading", step }));
       media.current = r.media;
       setTitle(r.manifest.post.title);
+      // Suggested spots: the Studio's (the payoff) and every cut.
+      usePresetUi.getState().setSpots([
+        ...(r.manifest.suggestions ?? []),
+        ...cuts().map((time, i) => ({ label: `Cut ${i + 1}`, time, why: "Between two shots: a good place for a transition." })),
+      ].sort((a, b) => a.time - b.time));
       setPhase({ kind: "ready" });
     } catch (e) {
       setPhase({ kind: "error", message: (e as Error).message, retry: "open" });
@@ -57,6 +66,8 @@ export function StudioEditor({ params }: { params: StudioParams }) {
     // Straight to the editor: no welcome screen or first-run tour inside
     // the Studio (its Guide covers the editor).
     useUIStore.setState({ skipWelcomeScreen: true });
+    // The Studio is dark; so is its editor.
+    useThemeStore.getState().setMode("dark");
     try { localStorage.setItem(ONBOARDING_KEY, "true"); } catch { /* private window */ }
     if (!window.location.hash.startsWith("#/editor")) window.location.hash = "#/editor";
     void open();
@@ -82,6 +93,7 @@ export function StudioEditor({ params }: { params: StudioParams }) {
           <App />
         )}
       </div>
+      {phase.kind !== "loading" && <PresetInspector />}
     </>
   );
 }

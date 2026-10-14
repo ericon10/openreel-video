@@ -3,6 +3,8 @@ import { getExportEngine } from "@openreel/core";
 import { useProjectStore } from "../stores/project-store";
 import type { StudioParams } from "./params";
 import { memoryFile } from "./sink";
+import { applyPreset, cutoutIds, restoreCutouts } from "./presets/actions";
+import { orderStudioTracks } from "./presets/order";
 
 // The Studio side of the editor: load a post onto the timeline, and save
 // the export and the project back to the post. The Studio is the source of
@@ -32,9 +34,13 @@ export interface StudioManifest {
   media: StudioMedia[];
   captions: StudioCaption[];
   duration: number;
+  // Spots the Studio suggests (the payoff); one click moves the playhead.
+  suggestions?: Array<{ label: string; time: number; why: string }>;
+  // The post's Format from the Idea step: a preset placed on first open.
+  format?: { preset: string; strength: "subtle" | "normal" | "strong" } | null;
   // The saved editor project (media blobs left out), when the post was
   // edited before.
-  project: (Project & { studioMedia?: Record<string, string> }) | null;
+  project: (Project & { studioMedia?: Record<string, string>; studioCutouts?: string[] }) | null;
 }
 
 async function json<T>(res: Response): Promise<T> {
@@ -88,7 +94,8 @@ async function assemble(manifest: StudioManifest, onStep: (s: string) => void): 
   }
   if (manifest.captions.length) {
     onStep("Adding the captions...");
-    const added = await store().addTrack("text", undefined, { role: "captions", name: "Captions" });
+    // On top: a track paints over the ones below it.
+    const added = await store().addTrack("text", 0, { role: "captions", name: "Captions" });
     const track = store().project.timeline.tracks.find((t) => t.type === "text");
     if (added.success && track) {
       for (const c of manifest.captions) {
@@ -98,6 +105,13 @@ async function assemble(manifest: StudioManifest, onStep: (s: string) => void): 
         });
       }
     }
+  }
+  // The suggested spots as markers, and the post's Format placed once.
+  for (const spot of manifest.suggestions ?? []) await store().addMarker(spot.time, spot.label, "#ff6a3d");
+  if (manifest.format) {
+    onStep("Placing the format's edit...");
+    const payoff = manifest.suggestions?.find((x) => /payoff/i.test(x.label))?.time ?? Math.max(0, manifest.duration - 2);
+    await applyPreset(manifest.format.preset, manifest.format.strength, payoff);
   }
   return ids;
 }
@@ -115,7 +129,11 @@ async function reopen(manifest: StudioManifest, onStep: (s: string) => void): Pr
     const file = await fetchFile(m);
     items.push({ ...item, blob: file, fileHandle: null, isPlaceholder: false });
   }
-  store().loadProject({ ...saved, mediaLibrary: { items } });
+  store().loadProject({ ...saved, mediaLibrary: { items }, timeline: { ...saved.timeline, tracks: orderStudioTracks(saved.timeline.tracks) } });
+  if (saved.studioCutouts?.length) {
+    onStep("Loading the person cutout...");
+    await restoreCutouts(saved.studioCutouts);
+  }
   return map;
 }
 
@@ -133,6 +151,7 @@ export function projectForStudio(media: Record<string, string>): unknown {
   return {
     ...project,
     studioMedia: media,
+    studioCutouts: cutoutIds(),
     mediaLibrary: {
       items: project.mediaLibrary.items.map((i) => ({
         ...i, blob: null, fileHandle: null, thumbnailUrl: null, waveformData: null, filmstripThumbnails: [],

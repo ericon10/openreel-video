@@ -26,6 +26,7 @@ import { ProjectSwitcher } from "./ProjectSwitcher";
 import { SettingsDialog } from "./settings/SettingsDialog";
 import { Icon } from "@/icons/Icon";
 import { toast } from "../../stores/notification-store";
+import { isStudioEmbed } from "../../studio/params";
 import { useAnalytics, AnalyticsEvents } from "../../hooks/useAnalytics";
 import {
   ToolcraftDropdownMenu as DropdownMenu,
@@ -400,7 +401,8 @@ export const Toolbar: React.FC = () => {
       </div>
 
       {/* ─── Right: export only ───────────────────────────────── */}
-      <div className="flex items-center justify-end shrink-0">
+      {/* Character Studio embed: Done in the Studio bar exports instead. */}
+      <div className={`flex items-center justify-end shrink-0${isStudioEmbed() ? " hidden" : ""}`}>
         {/* Export */}
         {exportState.isExporting ? (
           <button

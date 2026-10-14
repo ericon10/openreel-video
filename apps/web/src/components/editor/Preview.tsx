@@ -32,6 +32,7 @@ import { useUIStore } from "../../stores/ui-store";
 import { useThemeStore } from "../../stores/theme-store";
 import { getRenderBridge } from "../../bridges/render-bridge";
 import { getEffectsBridge } from "../../bridges/effects-bridge";
+import { applyStudioCamera, applyStudioTrack, studioLayerOrphaned } from "@openreel/core/studio";
 import {
   RendererFactory,
   type Renderer,
@@ -141,10 +142,10 @@ const applyPreviewAdjustmentLayers = async (
   ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
   layers: readonly AdjustmentLayer[],
   time: number,
+  studioTracks: ReadonlySet<string> = new Set(),
 ): Promise<boolean> => {
   let applied = false;
   const effectsBridge = getEffectsBridge();
-  if (!effectsBridge.isInitialized()) return false;
   for (const layer of layers) {
     if (
       !layer.enabled ||
@@ -152,6 +153,15 @@ const applyPreviewAdjustmentLayers = async (
       time < layer.startTime ||
       time >= layer.startTime + layer.duration
     ) continue;
+    // Character Studio embed: a preset block moves the frame below it.
+    // Character Studio embed: the track loop already moved the tracks below
+    // each preset; here only a frame drawn another way (a transition) or a
+    // preset whose track is gone.
+    if (layer.studio) {
+      if (studioLayerOrphaned(layer, studioTracks)) applied = applyStudioCamera(ctx, layer, time, canvas.width, canvas.height) || applied;
+      continue;
+    }
+    if (!effectsBridge.isInitialized()) continue;
     const effects = layer.effects.filter((effect) => effect.enabled !== false);
     if (effects.length === 0) continue;
     let source: ImageBitmap | null = null;
@@ -2673,6 +2683,7 @@ export const Preview: React.FC = () => {
 
       let hasRenderedFrame = false;
       let shouldClearCanvas = true;
+      const studioTracks = new Set<string>();
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       const activeShapeClips = getActiveShapeClips(allShapeClips, time);
@@ -2953,6 +2964,9 @@ export const Preview: React.FC = () => {
         let blurBackdropDrawn = false;
 
         for (const { track } of allRenderableTracks) {
+          // Character Studio embed: presets on this track move the tracks below.
+          applyStudioTrack(ctx, project.adjustmentLayers, track.id, time, canvas.width, canvas.height);
+          studioTracks.add(track.id);
           {
             for (const clip of track.clips) {
               if (!mediaClipHasVisual(clip)) continue;
@@ -3179,6 +3193,7 @@ export const Preview: React.FC = () => {
           ctx,
           project.adjustmentLayers ?? [],
           time,
+          studioTracks,
         );
         hasRenderedFrame = hasRenderedFrame || adjusted;
       }

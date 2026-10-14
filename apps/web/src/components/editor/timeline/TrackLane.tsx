@@ -1,3 +1,4 @@
+import { PresetBlock } from "../../../studio/presets/PresetBlock";
 import React, { useRef, useCallback, useEffect, useState, useMemo } from "react";
 import type {
   Track,
@@ -365,6 +366,8 @@ export const TrackLane: React.FC<TrackLaneProps> = React.memo(function TrackLane
           />
         ))}
         {adjustmentLayers.map((layer) => {
+          // Character Studio embed: preset blocks draw and edit themselves.
+          if (layer.studio) return <PresetBlock key={layer.id} layer={layer} pixelsPerSecond={pixelsPerSecond} frameRate={frameRate} />;
           const ownerClip = track.clips.find(
             (clip) =>
               layer.startTime < clip.startTime + clip.duration &&
