@@ -171,6 +171,16 @@ async function reopen(manifest: StudioManifest, onStep: (s: string) => void): Pr
   const marked = new Set(store().project.timeline.markers.map((m) => (m.label ?? "").toLowerCase()));
   for (const spot of manifest.suggestions ?? []) if (!marked.has(spot.label.toLowerCase())) await store().addMarker(spot.time, spot.label, "#ff6a3d");
   restoreApplied(saved.studioApplied);
+  // A voiceover picked after this timeline was saved: placed at its start
+  // on its own track (the timeline's own captions stay as they are).
+  const known = new Set(Object.values(map));
+  for (const m of manifest.media) {
+    if (m.role !== "voice" || known.has(m.id)) continue;
+    onStep(`Adding the voiceover ${m.name}...`);
+    const mediaId = await importOne(m);
+    map[mediaId] = m.id;
+    await store().placeMediaClip(mediaId, undefined, m.start);
+  }
   return map;
 }
 
