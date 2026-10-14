@@ -10,6 +10,8 @@ import { registerServiceWorker } from "./services/service-worker";
 import { initCustomFonts } from "./components/editor/inspector/font-options";
 import { setEncoderBackendFactory } from "@openreel/core";
 import { NativeFFmpegBackend } from "./services/native-ffmpeg-backend";
+import { studioParams } from "./studio/params";
+import { StudioEditor } from "./studio/StudioEditor";
 
 const DesktopApp = React.lazy(() =>
   import("./desktop/DesktopApp").then((module) => ({
@@ -31,7 +33,10 @@ if (isDesktop) {
   );
 }
 
-registerServiceWorker().then((registration) => {
+// Character Studio embed: the Studio serves the editor; no offline cache.
+const studio = studioParams();
+
+if (!studio) registerServiceWorker().then((registration) => {
   if (registration) {
   }
 });
@@ -45,6 +50,8 @@ async function renderApplication(): Promise<void> {
         <React.Suspense fallback={<div className="h-screen w-screen bg-bg" />}>
           <DesktopApp />
         </React.Suspense>
+      ) : studio ? (
+        <StudioEditor params={studio} />
       ) : (
         <App />
       );

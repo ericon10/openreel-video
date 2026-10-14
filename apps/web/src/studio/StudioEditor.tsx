@@ -1,0 +1,87 @@
+import { useEffect, useRef, useState } from "react";
+import App from "../App";
+import { useUIStore } from "../stores/ui-store";
+import { openPost, saveToStudio } from "./bridge";
+import { ONBOARDING_KEY } from "../components/editor/tour/tour-steps";
+import type { StudioParams } from "./params";
+
+// The editor opened from a Studio post: the post goes onto the timeline,
+// a slim bar on top says where you came from, and Done exports the video,
+// saves it with the project to the post, and returns to the Finish step.
+// Every button shows what it is doing; errors say what to do next.
+
+type Phase = { kind: "loading"; step: string } | { kind: "ready" } | { kind: "saving"; step: string } | { kind: "error"; message: string; retry: "open" | "save" };
+
+const bar: React.CSSProperties = {
+  position: "fixed", top: 0, left: 0, right: 0, height: 40, zIndex: 9999, display: "flex", alignItems: "center", gap: 12,
+  padding: "0 12px", background: "#15110d", borderBottom: "1px solid rgba(255,246,235,0.1)", color: "#f5ede4",
+  font: "500 13px/1 system-ui, -apple-system, Segoe UI, sans-serif",
+};
+const btn = (primary: boolean): React.CSSProperties => ({
+  height: 28, padding: "0 14px", borderRadius: 8, border: primary ? "none" : "1px solid rgba(255,246,235,0.18)",
+  background: primary ? "#ff6a3d" : "transparent", color: primary ? "#1a0f08" : "#f5ede4", fontWeight: 700, cursor: "pointer",
+});
+
+export function StudioEditor({ params }: { params: StudioParams }) {
+  const [phase, setPhase] = useState<Phase>({ kind: "loading", step: "Opening the post..." });
+  const [title, setTitle] = useState("");
+  const media = useRef<Record<string, string>>({});
+  const started = useRef(false);
+
+  async function open() {
+    setPhase({ kind: "loading", step: "Opening the post..." });
+    try {
+      const r = await openPost(params, (step) => setPhase({ kind: "loading", step }));
+      media.current = r.media;
+      setTitle(r.manifest.post.title);
+      setPhase({ kind: "ready" });
+    } catch (e) {
+      setPhase({ kind: "error", message: (e as Error).message, retry: "open" });
+    }
+  }
+
+  async function done() {
+    setPhase({ kind: "saving", step: "Exporting the video..." });
+    try {
+      await saveToStudio(params, media.current, (step) => setPhase({ kind: "saving", step }));
+      setPhase({ kind: "saving", step: "Saved. Back to the post..." });
+      window.location.assign(params.back);
+    } catch (e) {
+      setPhase({ kind: "error", message: (e as Error).message, retry: "save" });
+    }
+  }
+
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    // Straight to the editor: no welcome screen or first-run tour inside
+    // the Studio (its Guide covers the editor).
+    useUIStore.setState({ skipWelcomeScreen: true });
+    try { localStorage.setItem(ONBOARDING_KEY, "true"); } catch { /* private window */ }
+    if (!window.location.hash.startsWith("#/editor")) window.location.hash = "#/editor";
+    void open();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const busy = phase.kind === "loading" || phase.kind === "saving";
+  return (
+    <>
+      <div style={bar} role="toolbar" aria-label="Character Studio">
+        <button type="button" style={btn(false)} disabled={phase.kind === "saving"} onClick={() => window.location.assign(params.back)}>Back to the post</button>
+        <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", opacity: 0.85 }}>
+          {phase.kind === "error" ? <span style={{ color: "#ff8a6a" }}>{phase.message}</span> : busy ? phase.step : title ? `Editing: ${title}` : "Editing"}
+        </span>
+        {phase.kind === "error" && <button type="button" style={btn(false)} onClick={() => void (phase.retry === "open" ? open() : done())}>Retry</button>}
+        <button type="button" style={btn(true)} disabled={phase.kind !== "ready" && !(phase.kind === "error" && phase.retry === "save")} onClick={() => void done()} aria-busy={phase.kind === "saving"}>
+          {phase.kind === "saving" ? "Saving..." : "Done"}
+        </button>
+      </div>
+      <div style={{ position: "fixed", top: 40, left: 0, right: 0, bottom: 0 }}>
+        {phase.kind === "loading" ? (
+          <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#f5ede4", font: "500 14px system-ui" }}>{phase.step}</div>
+        ) : (
+          <App />
+        )}
+      </div>
+    </>
+  );
+}

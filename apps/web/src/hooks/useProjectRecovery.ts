@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { autoSaveManager, type AutoSaveMetadata } from "../services/auto-save";
 import { useProjectStore } from "../stores/project-store";
+import { isStudioEmbed } from "../studio/params";
 
 interface RecoveryState {
   isChecking: boolean;
@@ -19,6 +20,11 @@ export function useProjectRecovery() {
 
   useEffect(() => {
     const checkForRecovery = async () => {
+      // Character Studio embed: the post is the project; nothing to recover.
+      if (isStudioEmbed()) {
+        setState({ isChecking: false, availableSaves: [], showDialog: false });
+        return;
+      }
       try {
         await autoSaveManager.initialize();
         const saves = await autoSaveManager.checkForRecovery();

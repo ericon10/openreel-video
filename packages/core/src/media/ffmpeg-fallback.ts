@@ -1,6 +1,10 @@
 import type { ExportProgress } from "../export/types";
 
-const FFMPEG_CORE_BASE_URL = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm";
+// A host can serve the core itself (the Character Studio embed does, so a
+// cross-origin isolated page never depends on a CDN).
+const ffmpegCoreBaseUrl = (): string =>
+  (globalThis as { __OPENREEL_FFMPEG_BASE__?: string }).__OPENREEL_FFMPEG_BASE__ ??
+  "https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm";
 type FFmpegInstance = {
   load(options?: {
     coreURL?: string;
@@ -149,7 +153,7 @@ export class FFmpegFallback {
       this.ffmpeg = instance;
       const download = async (filename: string, mime: string): Promise<string> => {
         try {
-          const response = await fetch(`${FFMPEG_CORE_BASE_URL}/${filename}`, { signal: controller.signal });
+          const response = await fetch(`${ffmpegCoreBaseUrl()}/${filename}`, { signal: controller.signal });
           if (!response.ok) throw new Error(`FFmpeg download failed (${response.status}): ${filename}`);
           const bytes = await response.arrayBuffer();
           checkAborted();
