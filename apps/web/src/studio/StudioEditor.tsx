@@ -11,6 +11,8 @@ import { setStylesApi } from "./presets/styles";
 import { rippleOn, setRipple } from "./presets/ripple";
 import type { StudioParams } from "./params";
 import { followLastShot } from "./follow";
+import { StudioMediaPicker } from "./media/StudioMediaPicker";
+import { setActiveMedia } from "./media/add";
 
 // The editor opened from a Studio post: the post goes onto the timeline,
 // a slim bar on top says where you came from, and Done exports the video,
@@ -42,6 +44,9 @@ export function StudioEditor({ params }: { params: StudioParams }) {
     try {
       const r = await openPost(params, (step) => setPhase({ kind: "loading", step }));
       media.current = r.media;
+      // Items added from the Studio media picker join this map, so they
+      // open again with the post.
+      setActiveMedia(media.current);
       setTitle(r.manifest.post.title);
       setStylesApi(params.api);
       usePresetUi.getState().setStyles(r.manifest.styles ?? []);
@@ -118,6 +123,7 @@ export function StudioEditor({ params }: { params: StudioParams }) {
         )}
       </div>
       {phase.kind !== "loading" && <PresetInspector />}
+      {phase.kind !== "loading" && <StudioMediaPicker params={params} />}
     </>
   );
 }

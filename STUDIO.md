@@ -29,13 +29,17 @@ only these small hooks:
 | `apps/web/src/components/editor/timeline/TrackLane.tsx` (markers) | The Presets track shows a marker for each freeze and speed ramp (`studio/presets/TimeMarkers.tsx`, `markers.ts`); a click selects the shot and opens its Speed Curves section (on a phone, the Edit tab) |
 | `apps/web/src/components/editor/timeline/ClipComponent.tsx` (speed) | A shot shows its speed on its block: 2x, Ramp, Freeze (`speedLabel`) |
 | `apps/web/src/components/editor/EditorInterface.tsx`, `Toolbar.tsx` | A bigger preview in the Studio: the timeline starts shorter and the header bar is hidden; listens for `openreel:compact-panel` to switch the phone tab |
+| `apps/web/src/components/editor/AssetsPanel.tsx` (Add media) | In the Studio, Add media and Import media open the Studio media picker (`studio/media/`): Studio first (this post's takes and stills, the character's clips and stills, the Library), From computer second (this panel's own file input) |
+| `apps/web/src/components/editor/timeline/TrackLane.tsx`, `Timeline.tsx` (drops) | An item dragged from the Studio picker (`application/json` `{ studioMedia }`) is fetched, added to the media library and placed where it is dropped (`handleStudioDrop` in `studio/media/add.ts`) |
 | `apps/web/src/studio/bridge.ts` (track names) | The tracks the Studio lays out are named by what they hold: Shots, B-roll, Voice, Music, Ambience (`studio/presets/trackNames.ts`); a freeze or ramp makes sure the Presets track exists |
 
 How it works: the Studio serves the built editor at `/editor/` with
 cross-origin isolation headers and opens it as
 `/editor/?studio=<post id>`. The editor asks the Studio for the post
-(`GET /api/v1/content/<id>/editor`: media, captions, saved project), puts
-it on the timeline, and Done exports in the browser (MP4 with H.264, or
+(`GET /api/v1/content/<id>/editor`: media, captions, saved project, No
+caption), puts it on the timeline (each file from its fresh storage link
+`src`, never from the browser's cache, then the Studio's address, then the
+Studio in parts of 4 MB; see `fetchBlob`), and Done exports in the browser (MP4 with H.264, or
 WebM with VP9 where the browser has no H.264 encoder), uploads it with
 the Studio's upload slots and posts the project back
 (`POST /api/v1/content/<id>/editor`). The Studio's worker makes the export

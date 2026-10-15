@@ -48,6 +48,7 @@ import { useTimelineStore, ZOOM_PRESETS } from "../../stores/timeline-store";
 import { useCompactEditor } from "../../hooks/useCompactEditor";
 import { useUIStore } from "../../stores/ui-store";
 import { toast } from "../../stores/notification-store";
+import { handleStudioDrop } from "../../studio/media/add";
 import { useEngineStore } from "../../stores/engine-store";
 import { getPlaybackBridge } from "../../bridges/playback-bridge";
 import { trackHasAudioItems, trackHasVisualItems } from "@openreel/core";
@@ -1633,6 +1634,8 @@ export const Timeline: React.FC = () => {
                 const rawData = e.dataTransfer.getData("application/json");
                 if (!rawData) return;
                 const data = JSON.parse(rawData);
+                // Character Studio: an item from the Studio media picker.
+                if (handleStudioDrop(data, "", snappedTime, (m) => toast.error("Could not add it", m))) return;
                 if (!data?.mediaId) return;
                 handleDropMedia("", data.mediaId, snappedTime);
               } catch {

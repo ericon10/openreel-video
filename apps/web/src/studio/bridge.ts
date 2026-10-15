@@ -22,6 +22,13 @@ export interface StudioMedia {
   kind: "video" | "audio" | "image";
   url: string;
   role: "clip" | "broll" | "music" | "ambience" | "voice";
+  // A fresh direct link to the file in storage (R2). The take was missing
+  // on the live site (owner, 2026-10-15): the Studio page had just played
+  // it through `url`, so the browser kept that redirect and storage's answer,
+  // which carries no CORS header for a plain <video>; the editor's fetch of
+  // the same address got the kept copy and was refused. A new link, fetched
+  // without the cache, always asks storage again.
+  src?: string | null;
   // Where it sits on the timeline and which part of the source plays.
   start: number;
   in: number;
@@ -39,6 +46,9 @@ export interface StudioManifest {
   canvas: { width: number; height: number; fps: number };
   media: StudioMedia[];
   captions: StudioCaption[];
+  // No caption on this post (owner, 2026-10-15): no caption track opens, and
+  // a saved one is left out.
+  captionOff?: boolean;
   // The post's caption look and place (the Studio's default otherwise).
   captionLook?: { style: "box" | "outline"; position: string };
   duration: number;
@@ -66,6 +76,9 @@ interface StudioExtras {
   studioMusic?: string[];
   studioMusicInExport?: boolean;
   studioApplied?: AppliedPreset[];
+  // Saved while the post had No caption: its captions come back when the
+  // owner switches the caption on again.
+  studioCaptionOff?: boolean;
 }
 
 async function json<T>(res: Response): Promise<T> {
@@ -78,12 +91,56 @@ export async function loadManifest(p: StudioParams): Promise<StudioManifest> {
   return json<StudioManifest>(await fetch(`${p.api}/content/${p.post}/editor`, { credentials: "same-origin" }));
 }
 
-async function fetchFile(m: StudioMedia): Promise<File> {
-  // Same origin first; a video may redirect to storage (R2 allows GET from
-  // the Studio's origin).
-  const res = await fetch(m.url, { credentials: "same-origin" });
-  if (!res.ok) throw new Error(`${m.name} could not be loaded (${res.status}).`);
-  const blob = await res.blob();
+// A file comes from its fresh direct link first, then from the Studio's own
+// address, then from the Studio in parts of at most 4 MB (a Vercel function
+// answers up to 4.5 MB); never from the browser's cache, which can hold a
+// copy without the CORS header the editor needs (see StudioMedia.src).
+const PART = 4 * 1024 * 1024;
+type Fetchable = Pick<StudioMedia, "name" | "kind" | "url" | "src">;
+export async function fetchBlob(m: Fetchable): Promise<Blob> {
+  const tries: string[] = [];
+  if (m.src) {
+    try {
+      const res = await fetch(m.src, { mode: "cors", credentials: "omit", cache: "no-store" });
+      if (res.ok) return await res.blob();
+      tries.push(`storage ${res.status}`);
+    } catch (e) {
+      tries.push(`storage: ${(e as Error).message}`);
+    }
+  }
+  try {
+    const res = await fetch(m.url, { credentials: "same-origin", cache: "no-store" });
+    if (res.ok) return await res.blob();
+    tries.push(`studio ${res.status}`);
+  } catch (e) {
+    tries.push(`studio: ${(e as Error).message}`);
+  }
+  try {
+    return await fetchInParts(m.url);
+  } catch (e) {
+    tries.push(`parts: ${(e as Error).message}`);
+  }
+  throw new Error(`${m.name} could not be loaded (${tries.join("; ")}).`);
+}
+
+async function fetchInParts(url: string): Promise<Blob> {
+  const at = `${url}${url.includes("?") ? "&" : "?"}proxy=1`;
+  const parts: Uint8Array<ArrayBuffer>[] = [];
+  let type = "";
+  for (let start = 0, total = Infinity; start < total; start += PART) {
+    const res = await fetch(at, { credentials: "same-origin", cache: "no-store", headers: { range: `bytes=${start}-${start + PART - 1}` } });
+    if (res.status === 200) return await res.blob();
+    if (res.status !== 206) throw new Error(`answered ${res.status}`);
+    total = Number(/\/(\d+)$/.exec(res.headers.get("content-range") ?? "")?.[1] ?? 0);
+    if (!total) throw new Error("no length");
+    type ||= res.headers.get("content-type") ?? "";
+    parts.push(new Uint8Array(await res.arrayBuffer()));
+  }
+  return new Blob(parts, { type });
+}
+
+export async function fetchFile(m: Fetchable): Promise<File> {
+  const blob = await fetchBlob(m);
   const type = blob.type || (m.kind === "video" ? "video/mp4" : m.kind === "audio" ? "audio/mpeg" : "image/png");
   // M4A music is served as audio/mp4: name it .m4a, not .mp4.
   const ext = type === "audio/mp4" ? "m4a" : type.split("/")[1]?.replace("mpeg", "mp3").replace("quicktime", "mov") || "bin";
@@ -92,7 +149,7 @@ async function fetchFile(m: StudioMedia): Promise<File> {
 
 const store = () => useProjectStore.getState();
 
-async function importOne(m: StudioMedia): Promise<string> {
+export async function importOne(m: Fetchable): Promise<string> {
   const file = await fetchFile(m);
   const before = new Set(store().project.mediaLibrary.items.map((i) => i.id));
   const r = await store().importMedia(file);
@@ -133,22 +190,7 @@ async function assemble(manifest: StudioManifest, onStep: (s: string) => void, w
   }
   // Tracks named by what is on them: Shots, B-roll, Voice, Music, Ambience.
   await nameTracks((mediaId) => manifest.media.find((m) => m.id === ids[mediaId])?.role);
-  if (manifest.captions.length) {
-    onStep("Adding the captions...");
-    // On top: a track paints over the ones below it.
-    const added = await store().addTrack("text", 0, { role: "captions", name: "Captions" });
-    const track = store().project.timeline.tracks.find((t) => t.type === "text");
-    if (added.success && track) {
-      for (const c of manifest.captions) {
-        const end = c.end ?? manifest.duration;
-        store().createTextClip(track.id, c.start, c.text, Math.max(0.5, end - c.start), {
-          fontSize: 64, fontWeight: 800, color: "#ffffff", strokeColor: "#000000", strokeWidth: 6, textAlign: "center",
-        });
-      }
-      // The same look and place the Studio's own render gives them.
-      styleCaptions(manifest.captionLook?.style ?? "box", manifest.captionLook?.position ?? "upper_third");
-    }
-  }
+  await addCaptions(manifest, onStep);
   // The music ducked under the voice (or the clip's own sound), as the
   // Studio's render does; the export follows the volume keys it writes.
   if (manifest.sound?.duck !== false) {
@@ -172,6 +214,27 @@ async function assemble(manifest: StudioManifest, onStep: (s: string) => void, w
   }
   return ids;
 }
+
+// The post's captions on their own track, on top (a track paints over the
+// ones below it), with the Studio's look and place. None with No caption.
+async function addCaptions(manifest: StudioManifest, onStep: (s: string) => void): Promise<void> {
+  if (manifest.captionOff || !manifest.captions.length) return;
+  onStep("Adding the captions...");
+  const added = await store().addTrack("text", 0, { role: "captions", name: "Captions" });
+  const track = store().project.timeline.tracks.find((t) => t.type === "text");
+  if (!added.success || !track) return;
+  for (const c of manifest.captions) {
+    const end = c.end ?? manifest.duration;
+    store().createTextClip(track.id, c.start, c.text, Math.max(0.5, end - c.start), {
+      fontSize: 64, fontWeight: 800, color: "#ffffff", strokeColor: "#000000", strokeWidth: 6, textAlign: "center",
+    });
+  }
+  // The same look and place the Studio's own render gives them.
+  styleCaptions(manifest.captionLook?.style ?? "box", manifest.captionLook?.position ?? "upper_third");
+}
+
+// The caption track the Studio laid out (by its role, or its name).
+const isCaptionTrack = (t: { type: string; role?: string; name?: string }) => t.type === "text" && (t.role === "captions" || t.name === "Captions");
 
 // The Studio names the tracks it lays out (owner, 2026-10-15); a name the
 // owner gave a track stays.
@@ -197,7 +260,11 @@ async function reopen(manifest: StudioManifest, onStep: (s: string) => void, war
       items.push(item);
     }
   }
-  store().loadProject({ ...saved, mediaLibrary: { items }, timeline: { ...saved.timeline, tracks: orderStudioTracks(saved.timeline.tracks) } });
+  // No caption (owner, 2026-10-15): a saved caption track stays out.
+  const tracks = manifest.captionOff ? saved.timeline.tracks.filter((t) => !isCaptionTrack(t)) : saved.timeline.tracks;
+  store().loadProject({ ...saved, mediaLibrary: { items }, timeline: { ...saved.timeline, tracks: orderStudioTracks(tracks) } });
+  // Saved while the caption was off and switched on since: it comes back.
+  if (!manifest.captionOff && saved.studioCaptionOff && !store().project.timeline.tracks.some((t) => isCaptionTrack(t))) await addCaptions(manifest, onStep);
   // Posts saved before the tracks had names get them now.
   await nameTracks((mediaId) => manifest.media.find((m) => m.id === map[mediaId])?.role);
   if (saved.studioCutouts?.length) {
@@ -209,6 +276,26 @@ async function reopen(manifest: StudioManifest, onStep: (s: string) => void, war
   const marked = new Set(store().project.timeline.markers.map((m) => (m.label ?? "").toLowerCase()));
   for (const spot of manifest.suggestions ?? []) if (!marked.has(spot.label.toLowerCase())) await store().addMarker(spot.time, spot.label, "#ff6a3d");
   restoreApplied(saved.studioApplied);
+  // A timeline saved while its shots never loaded (the live site, owner
+  // 2026-10-15) gets the post's shots back at their places.
+  const shotIds = new Set(manifest.media.filter((m) => m.role === "clip").map((m) => m.id));
+  const hasShot = store().project.timeline.tracks.some((t) => t.clips.some((c) => shotIds.has(map[c.mediaId] ?? "")));
+  if (!hasShot) {
+    for (const m of manifest.media.filter((x) => x.role === "clip")) {
+      onStep(`Loading ${m.name}...`);
+      try {
+        const mediaId = await importOne(m);
+        map[mediaId] = m.id;
+        const placed = await store().placeMediaClip(mediaId, undefined, m.start);
+        if (!placed.success) throw new Error(`${m.name}: ${placed.error?.message ?? "could not be placed"}`);
+        const clip = store().project.timeline.tracks.flatMap((t) => t.clips).find((c) => c.mediaId === mediaId);
+        if (clip && (m.in > 0 || m.out != null)) await store().trimClip(clip.id, m.in, m.out ?? undefined);
+      } catch (e) {
+        warnings.push((e as Error).message);
+      }
+    }
+    await nameTracks((mediaId) => manifest.media.find((m) => m.id === map[mediaId])?.role);
+  }
   // A voiceover picked after this timeline was saved: placed at its start
   // on its own track (the timeline's own captions stay as they are).
   const known = new Set(Object.values(map));
@@ -229,6 +316,7 @@ async function reopen(manifest: StudioManifest, onStep: (s: string) => void, war
 export async function openPost(p: StudioParams, onStep: (s: string) => void): Promise<{ manifest: StudioManifest; media: Record<string, string>; warnings: string[] }> {
   onStep("Opening the post...");
   const manifest = await loadManifest(p);
+  captionOff = !!manifest.captionOff;
   const warnings: string[] = [];
   const media = manifest.project ? await reopen(manifest, onStep, warnings) : await assemble(manifest, onStep, warnings);
   return { manifest, media, warnings };
@@ -258,11 +346,13 @@ async function duckMusic(ids: Record<string, string>, manifest: StudioManifest, 
 
 // The project as JSON for the Studio: no blobs, file handles or object
 // URLs; media are named by their Studio asset ids.
+let captionOff = false;
 export function projectForStudio(media: Record<string, string>): unknown {
   const project = store().project;
   return {
     ...project,
     studioMedia: media,
+    studioCaptionOff: captionOff,
     studioCutouts: cutoutIds(),
     studioBeats: savedBeats(),
     studioMusic: musicMediaIds(),

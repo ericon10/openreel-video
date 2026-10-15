@@ -7,6 +7,7 @@ import {
 } from "@/icons/lucide-compat";
 import { isStudioEmbed } from "../../studio/params";
 import { StudioPresetsPanel } from "../../studio/presets/PresetsPanel";
+import { openStudioMedia } from "../../studio/media/state";
 import {
   BACKGROUND_PRESETS,
   generateBackgroundBlob,
@@ -957,6 +958,9 @@ export const AssetsPanel: React.FC = () => {
   );
 
   const triggerFileInput = useCallback(() => {
+    // Character Studio: Add media opens the Studio picker first; its From
+    // computer tab clicks this input.
+    if (isStudioEmbed()) return openStudioMedia(() => fileInputRef.current?.click());
     fileInputRef.current?.click();
   }, []);
 

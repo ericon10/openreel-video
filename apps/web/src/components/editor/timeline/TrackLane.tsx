@@ -26,6 +26,7 @@ import { useTimelineStore } from "../../../stores/timeline-store";
 import { useUIStore } from "../../../stores/ui-store";
 import { useProjectStore } from "../../../stores/project-store";
 import { toast } from "../../../stores/notification-store";
+import { handleStudioDrop } from "../../../studio/media/add";
 
 type GraphicClipUnion = ShapeClip | SVGClip | StickerClip;
 
@@ -230,6 +231,12 @@ export const TrackLane: React.FC<TrackLaneProps> = React.memo(function TrackLane
         if (!rawData) return;
 
         const data = JSON.parse(rawData);
+        // Character Studio: an item dragged from the Studio media picker.
+        const studioRect = laneRef.current?.getBoundingClientRect();
+        if (studioRect) {
+          const at = calculateSnap(Math.max(0, (e.clientX - studioRect.left + scrollX) / pixelsPerSecond), "", allTracks, useTimelineStore.getState().playheadPosition, snapSettings, pixelsPerSecond).time;
+          if (handleStudioDrop(data, track.id, at, (m) => toast.error("Could not add it", m))) return;
+        }
         if (
           !data ||
           typeof data !== "object" ||
