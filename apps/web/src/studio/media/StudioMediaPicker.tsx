@@ -30,7 +30,8 @@ function Thumb({ item }: { item: PickerItem }) {
   const box = "h-full w-full object-cover";
   const ref = useRef<HTMLDivElement>(null);
   const near = useNear(ref);
-  if (item.thumb) return <img src={item.thumb} alt="" className={box} loading="lazy" draggable={false} />;
+  // The editor page is cross-origin isolated: thumbnails load with CORS.
+  if (item.thumb) return <img src={item.thumb} alt="" className={box} loading="lazy" draggable={false} crossOrigin="anonymous" />;
   if (item.kind === "video") {
     // No poster: the take's first frame, loaded once the tile comes into
     // view (the direct link when there is one; storage answers it, as it
