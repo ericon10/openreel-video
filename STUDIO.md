@@ -77,6 +77,12 @@ clips finish loading. While the post is open, `studio/follow.ts` keeps a
 caption or sound clip that ended with the last shot ending with it when the
 shots change length, so the export never runs on over black.
 
+Safe zones (`apps/web/src/studio/safezones/`): a Safe zones choice in the
+Studio bar (Off, TikTok, Reels) draws the app's top bar, button column and
+caption area over the preview, named; preview only, never exported;
+remembered in the browser. The bands are fractions of the 9:16 frame in
+`zones.ts`, with a test.
+
 Tests: the Studio repo drives this editor like a user with Playwright
 (`e2e/editor/`, `npm run e2e:editor` against `npm run studio`).
 

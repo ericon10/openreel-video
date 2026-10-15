@@ -73,6 +73,7 @@ import { useEngineStore } from "../../stores/engine-store";
 // Character Studio embed: captions measured as drawn, picked and edited in place.
 import { capScaleToFrame, textClipAtPoint, textClipRect } from "../../studio/text/geometry";
 import { InlineTextEdit } from "../../studio/text/InlineTextEdit";
+import { SafeZones } from "../../studio/safezones/SafeZones";
 import { openInlineTextEdit } from "../../studio/text/edit-state";
 import {
   type HandlePosition,
@@ -8027,6 +8028,8 @@ export const Preview: React.FC = () => {
 
           {/* Character Studio embed: edit a caption in place */}
           <InlineTextEdit canvas={canvasRef.current} overlay={overlayRef.current} project={settings} />
+          {/* Character Studio embed: TikTok or Reels safe zones over the preview */}
+          <SafeZones canvas={canvasRef.current} overlay={overlayRef.current} />
 
           {/* Shape Clip Resize/Transform Overlay */}
           {showShapeClipHandles && shapeClipBounds && (

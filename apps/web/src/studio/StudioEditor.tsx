@@ -13,6 +13,8 @@ import type { StudioParams } from "./params";
 import { followLastShot } from "./follow";
 import { StudioMediaPicker } from "./media/StudioMediaPicker";
 import { setActiveMedia } from "./media/add";
+import { useSafeZones } from "./safezones/state";
+import type { SafeZoneApp } from "./safezones/zones";
 
 // The editor opened from a Studio post: the post goes onto the timeline,
 // a slim bar on top says where you came from, and Done exports the video,
@@ -95,6 +97,8 @@ export function StudioEditor({ params }: { params: StudioParams }) {
   useEffect(() => () => unfollow.current?.(), []);
 
   const busy = phase.kind === "loading" || phase.kind === "saving";
+  const safe = useSafeZones((s) => s.app);
+  const setSafe = useSafeZones((s) => s.set);
   return (
     <>
       <div style={bar} role="toolbar" aria-label="Character Studio">
@@ -105,6 +109,14 @@ export function StudioEditor({ params }: { params: StudioParams }) {
         <label style={{ display: "flex", alignItems: "center", gap: 6, opacity: 0.85 }} title="Trim a shot shorter and the shots after it slide over, so no gap opens">
           <input type="checkbox" checked={ripple} onChange={(e) => { setRipple(e.target.checked); setRippleState(e.target.checked); }} />
           Ripple trim
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, opacity: 0.85 }} title="Where TikTok or Reels draw their buttons and captions over the video. Shown in the preview only, never exported">
+          Safe zones
+          <select aria-label="Safe zones" value={safe} onChange={(e) => setSafe(e.target.value as SafeZoneApp)} style={{ background: "#1c1714", color: "#f5ede4", border: "1px solid rgba(245,237,228,0.25)", borderRadius: 6, padding: "2px 4px", font: "inherit" }}>
+            <option value="off">Off</option>
+            <option value="tiktok">TikTok</option>
+            <option value="reels">Reels</option>
+          </select>
         </label>
         {phase.kind === "error" && <button type="button" style={btn(false)} onClick={() => void (phase.retry === "open" ? open() : done())}>Retry</button>}
         <button type="button" style={btn(true)} disabled={phase.kind !== "ready" && !(phase.kind === "error" && phase.retry === "save")} onClick={() => void done()} aria-busy={phase.kind === "saving"}>
