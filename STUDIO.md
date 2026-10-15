@@ -19,7 +19,7 @@ only these small hooks:
 | `apps/web/src/components/editor/Toolbar.tsx` | OpenReel's Export is hidden in the Studio; Done exports |
 | `apps/web/src/components/editor/timeline/utils.ts` | Clips also snap to beats and markers in the Studio |
 | `apps/web/src/components/editor/timeline/ClipComponent.tsx` | Ripple trim after a trim gesture (`studio/presets/ripple.ts`); a shot dropped onto another on the same track swaps into place (`studio/presets/reorder.ts`) instead of stacking on a new track |
-| `apps/web/src/components/editor/Preview.tsx` (captions) | A click on a caption selects it, a double-click (or a double-tap) edits it in place (`studio/text/`), and the selection box is measured from the wrapped lines (`studio/text/geometry.ts`) and drags the caption |
+| `apps/web/src/components/editor/Preview.tsx` (captions) | A click on a caption selects it, a double-click (or a double-tap) edits it in place (`studio/text/`), and the selection box is measured from the wrapped lines (`studio/text/geometry.ts`) and drags the caption. A resize follows the handle (the box grows from its center), one drag is one undo step, touch pointers drag and resize too, and the handles sit just outside the box |
 | `apps/web/src/components/editor/timeline/TextClipComponent.tsx` | A double-click on a caption block edits it in place |
 | `packages/core/src/text/title-engine.ts` | Captions wrap inside the frame (`wrapWidthFor`), measured and drawn with the same lines; `TextStyle.highlightColor` lights the words in turn (karaoke, `karaokeLitWords`) in the preview and the export |
 | `packages/core/src/text/types.ts` | `TextStyle.highlightColor` |
@@ -64,7 +64,9 @@ load is named in the bar and the rest of the post opens; sound ends with
 the post; the music is ducked under the voice (or the clip's sound) with
 OpenReel's ducker. `StudioEditor.tsx` fits the editor under the Studio's
 bar (the phone tabs stay on screen) and redraws the first frame while the
-clips finish loading.
+clips finish loading. While the post is open, `studio/follow.ts` keeps a
+caption or sound clip that ended with the last shot ending with it when the
+shots change length, so the export never runs on over black.
 
 Tests: the Studio repo drives this editor like a user with Playwright
 (`e2e/editor/`, `npm run e2e:editor` against `npm run studio`).

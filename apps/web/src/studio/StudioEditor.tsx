@@ -10,6 +10,7 @@ import { cuts } from "./presets/actions";
 import { setStylesApi } from "./presets/styles";
 import { rippleOn, setRipple } from "./presets/ripple";
 import type { StudioParams } from "./params";
+import { followLastShot } from "./follow";
 
 // The editor opened from a Studio post: the post goes onto the timeline,
 // a slim bar on top says where you came from, and Done exports the video,
@@ -34,6 +35,7 @@ export function StudioEditor({ params }: { params: StudioParams }) {
   const [ripple, setRippleState] = useState(rippleOn());
   const media = useRef<Record<string, string>>({});
   const started = useRef(false);
+  const unfollow = useRef<(() => void) | null>(null);
 
   async function open() {
     setPhase({ kind: "loading", step: "Opening the post..." });
@@ -54,6 +56,9 @@ export function StudioEditor({ params }: { params: StudioParams }) {
       // and stayed black until a seek or Play (editor QA, 2026-10-15):
       // redraw it a few times while they finish loading.
       for (const ms of [300, 1000, 2500, 5000]) setTimeout(() => window.dispatchEvent(new Event("openreel:preview-invalidate")), ms);
+      // Captions and sound that end with the last shot keep ending with it.
+      unfollow.current?.();
+      unfollow.current = followLastShot();
     } catch (e) {
       setPhase({ kind: "error", message: (e as Error).message, retry: "open" });
     }
@@ -82,6 +87,7 @@ export function StudioEditor({ params }: { params: StudioParams }) {
     if (!window.location.hash.startsWith("#/editor")) window.location.hash = "#/editor";
     void open();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => unfollow.current?.(), []);
 
   const busy = phase.kind === "loading" || phase.kind === "saving";
   return (
