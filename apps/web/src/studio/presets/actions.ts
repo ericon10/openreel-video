@@ -129,6 +129,9 @@ async function applyTime(def: PresetDef, strength: PresetStrength, at: number): 
   speed.initializeClip(clip.id, clip.duration);
   const rel = Math.max(0, at - clip.startTime);
   const dur = Math.min(def.duration, Math.max(0.2, clip.duration - rel));
+  // Its marker sits on the Presets track (owner, 2026-10-15), so the track is
+  // there even when no block preset was placed yet.
+  if (def.speed || def.freeze) await ensurePresetsTrack().catch(() => undefined);
   if (def.speed) {
     for (const p of def.speed) speed.addSpeedKeyframe(clip.id, rel + p.t * dur, p.speed, "ease-in-out");
     // Back to full speed after the moment.

@@ -1,4 +1,7 @@
 import { PresetBlock } from "../../../studio/presets/PresetBlock";
+import { TimeMarkers } from "../../../studio/presets/TimeMarkers";
+import { PRESETS_TRACK } from "../../../studio/presets/order";
+import { isStudioEmbed } from "../../../studio/params";
 import React, { useRef, useCallback, useEffect, useState, useMemo } from "react";
 import type {
   Track,
@@ -384,6 +387,8 @@ export const TrackLane: React.FC<TrackLaneProps> = React.memo(function TrackLane
             />
           );
         })}
+        {/* Character Studio embed: freeze and speed ramp markers (owner, 2026-10-15). */}
+        {isStudioEmbed() && track.name === PRESETS_TRACK && track.role === "effects" && <TimeMarkers pixelsPerSecond={pixelsPerSecond} />}
         {transitionHandles.map((handle) => (
             <TransitionHandle
               key={

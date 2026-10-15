@@ -18,6 +18,7 @@ import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts";
 import { useEditorInitialization } from "../../hooks/useEditorInitialization";
 import { useCompactEditor } from "../../hooks/useCompactEditor";
 import "./editor-responsive.css";
+import { isStudioEmbed } from "../../studio/params";
 
 const ChatPanel = React.lazy(() =>
   import("./chat/ChatPanel").then((module) => ({ default: module.ChatPanel })),
@@ -195,7 +196,9 @@ export const EditorInterface: React.FC = () => {
   const [mediaWidth, setMediaWidth] = useState(() => window.innerWidth < 1600 ? MIN_MEDIA_W : DEFAULT_MEDIA_W);
   const [inspectorWidth, setInspectorWidth] = useState(() => window.innerWidth < 1600 ? MIN_INSPECTOR_W : DEFAULT_INSPECTOR_W);
   const [chatWidth, setChatWidth] = useState(DEFAULT_CHAT_W);
-  const [timelineVh, setTimelineVh] = useState(DEFAULT_TIMELINE_VH);
+  // Character Studio embed (owner, 2026-10-15): a shorter timeline to start
+  // with, so the preview is bigger; its edge still drags.
+  const [timelineVh, setTimelineVh] = useState(isStudioEmbed() ? MIN_TIMELINE_VH + 4 : DEFAULT_TIMELINE_VH);
 
   const chatVisible = panels.agentChat?.visible ?? false;
   useEffect(() => {
@@ -209,6 +212,15 @@ export const EditorInterface: React.FC = () => {
     setPanelVisible("agentChat", panel === "chat");
     if (panel === "chat") setHasOpenedChat(true);
   };
+  // Character Studio embed: a freeze or ramp marker opens the Edit tab.
+  useEffect(() => {
+    const on = (e: Event) => {
+      const panel = (e as CustomEvent<string>).detail;
+      if (panel === "inspector" || panel === "timeline" || panel === "media") setCompactPanel(panel);
+    };
+    window.addEventListener("openreel:compact-panel", on);
+    return () => window.removeEventListener("openreel:compact-panel", on);
+  }, []);
 
   const mediaRef = useRef(mediaWidth);
   const inspectorRef = useRef(inspectorWidth);

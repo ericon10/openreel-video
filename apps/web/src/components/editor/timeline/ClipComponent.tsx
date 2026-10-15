@@ -24,6 +24,7 @@ import { getVisibleRepeatRange } from "./visible-repeat-range";
 import { isStudioEmbed } from "../../../studio/params";
 import { rippleAfterTrim } from "../../../studio/presets/ripple";
 import { reorderOnDrop } from "../../../studio/presets/reorder";
+import { speedLabel } from "../../../studio/presets/markers";
 
 interface ClipComponentProps {
   clip: Clip;
@@ -951,6 +952,17 @@ export const ClipComponent: React.FC<ClipComponentProps> = ({
       >
         {clipName}
       </span>
+
+      {/* Character Studio embed (owner, 2026-10-15): a shot that is not at
+          normal speed says so on its block. */}
+      {isStudioEmbed() && speedLabel(clip) && (
+        <span
+          data-studio="clip-speed"
+          className={`absolute ${isAudio ? "bottom-1.5" : "top-1.5"} right-2 z-10 pointer-events-none rounded bg-black/60 px-1 text-[10px] font-bold text-white`}
+        >
+          {speedLabel(clip)}
+        </span>
+      )}
 
       {isAudio && (
         <svg

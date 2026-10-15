@@ -32,6 +32,22 @@ export function measureTextClip(clip: TextClip, projectWidth: number): { width: 
   return { width: width + stroke, height: height + stroke };
 }
 
+// The largest scale, up to the one asked for, at which the caption is no
+// taller than the frame (owner, 2026-10-15). It wraps to stay inside the
+// width, so a bigger caption grows taller; the handle stops at the frame.
+export function capScaleToFrame(clip: TextClip, project: { width: number; height: number }, want: { x: number; y: number }, measure: (c: TextClip, w: number) => { height: number } = measureTextClip): { x: number; y: number } {
+  const at = (k: number): TextClip => ({ ...clip, transform: { ...clip.transform, scale: { x: want.x * k, y: want.y * k } } }) as TextClip;
+  const fits = (k: number) => measure(at(k), project.width).height * want.y * k <= project.height;
+  if (fits(1)) return want;
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 18; i++) {
+    const mid = (lo + hi) / 2;
+    if (fits(mid)) lo = mid; else hi = mid;
+  }
+  const k = Math.max(lo, 0.1 / Math.max(want.x, want.y, 1e-6));
+  return { x: want.x * k, y: want.y * k };
+}
+
 // The caption's rectangle in the overlay's coordinates (the canvas is
 // letterboxed inside its element).
 export function textClipRect(clip: TextClip, project: { width: number; height: number }, canvas: HTMLElement, overlay: HTMLElement): TextRect {

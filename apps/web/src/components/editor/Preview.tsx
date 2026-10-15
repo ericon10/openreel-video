@@ -29,6 +29,7 @@ import { useProjectStore } from "../../stores/project-store";
 import { previewProxyCache, usePreviewProxyStore } from "../../stores/preview-proxy-store";
 import { useTimelineStore } from "../../stores/timeline-store";
 import { useUIStore } from "../../stores/ui-store";
+import { isStudioEmbed } from "../../studio/params";
 import { useThemeStore } from "../../stores/theme-store";
 import { getRenderBridge } from "../../bridges/render-bridge";
 import { getEffectsBridge } from "../../bridges/effects-bridge";
@@ -70,7 +71,7 @@ import {
 } from "@openreel/core";
 import { useEngineStore } from "../../stores/engine-store";
 // Character Studio embed: captions measured as drawn, picked and edited in place.
-import { textClipAtPoint, textClipRect } from "../../studio/text/geometry";
+import { capScaleToFrame, textClipAtPoint, textClipRect } from "../../studio/text/geometry";
 import { InlineTextEdit } from "../../studio/text/InlineTextEdit";
 import { openInlineTextEdit } from "../../studio/text/edit-state";
 import {
@@ -1055,6 +1056,9 @@ export const Preview: React.FC = () => {
   const textGroupRef = useRef(false);
   const pendingTextRef = useRef<{ clipId: string; transform: { position?: { x: number; y: number }; scale?: { x: number; y: number } } } | null>(null);
   const textResizeStartRef = useRef<{ width: number; height: number } | null>(null);
+  // When the last drag in the preview ended: its closing click is not a
+  // click on empty space (owner, 2026-10-15: click away to deselect).
+  const lastInteractionEndRef = useRef(0);
 
   // Track if we're currently interacting to prevent re-renders during resize/move
   const isInteractingRef = useRef<boolean>(false);
@@ -6408,6 +6412,7 @@ export const Preview: React.FC = () => {
   }, []);
   // On release (both mouseup handlers call it; the second does nothing).
   const finishTextInteraction = useCallback(() => {
+    if (isInteractingRef.current) lastInteractionEndRef.current = performance.now();
     const pending = pendingTextRef.current;
     pendingTextRef.current = null;
     textResizeStartRef.current = null;
@@ -7028,6 +7033,13 @@ export const Preview: React.FC = () => {
       if (clip) {
         select({ type: "shape-clip", id: clip.id });
         e.stopPropagation();
+        return;
+      }
+      // Character Studio embed (owner, 2026-10-15): a click where nothing
+      // is clears the selection (not the click that ends a drag).
+      if (isStudioEmbed() && performance.now() - lastInteractionEndRef.current > 300) {
+        useUIStore.getState().clearSelection();
+        e.stopPropagation();
       }
     },
     [interactionMode, findGraphicClipAtPoint, select, allTextClips, playheadPosition, timelineTracks, settings],
@@ -7109,32 +7121,16 @@ export const Preview: React.FC = () => {
           const fy = (d: number) => Math.max(0.1, 1 + (2 * d) / Math.max(8, start.height));
           const clamp = (v: number) => Math.min(10, Math.max(0.1, v));
 
-          switch (activeHandle) {
-            case "e":
-            case "se":
-            case "ne":
-              newScaleX = clamp(startTransform.scaleX * fx(deltaX));
-              if (lockAspectRatio) newScaleY = clamp(startTransform.scaleY * fx(deltaX));
-              break;
-            case "w":
-            case "sw":
-            case "nw":
-              newScaleX = clamp(startTransform.scaleX * fx(-deltaX));
-              if (lockAspectRatio) newScaleY = clamp(startTransform.scaleY * fx(-deltaX));
-              break;
-            case "s":
-              newScaleY = clamp(startTransform.scaleY * fy(deltaY));
-              if (lockAspectRatio) newScaleX = clamp(startTransform.scaleX * fy(deltaY));
-              break;
-            case "n":
-              newScaleY = clamp(startTransform.scaleY * fy(-deltaY));
-              if (lockAspectRatio) newScaleX = clamp(startTransform.scaleX * fy(-deltaY));
-              break;
-          }
+          // A caption always grows in proportion (owner, 2026-10-15).
+          const f = activeHandle === "n" ? fy(-deltaY) : activeHandle === "s" ? fy(deltaY) : activeHandle.includes("w") ? fx(-deltaX) : fx(deltaX);
+          newScaleX = clamp(startTransform.scaleX * f);
+          newScaleY = clamp(startTransform.scaleY * f);
+          // Never taller than the frame: the handle stops there.
+          const capped = capScaleToFrame(activeTextClip, settings, { x: newScaleX, y: newScaleY });
 
           newTransform = {
             position: { x: startTransform.x, y: startTransform.y },
-            scale: { x: newScaleX, y: newScaleY },
+            scale: capped,
           };
         }
 
@@ -7707,6 +7703,11 @@ export const Preview: React.FC = () => {
         } ${zoomLevel > 1 ? "overflow-auto" : ""}`}
         onMouseMove={interactionMode !== "none" ? handleMouseMove : undefined}
         onMouseUp={handleMouseUp}
+        onClick={(e) => {
+          // Character Studio embed: a click on the empty stage around the
+          // frame clears the selection too.
+          if (isStudioEmbed() && e.target === e.currentTarget && interactionMode === "none" && performance.now() - lastInteractionEndRef.current > 300) useUIStore.getState().clearSelection();
+        }}
         onPointerMove={interactionMode !== "none" ? (e) => { if (e.pointerType !== "mouse") handleMouseMove(e as unknown as React.MouseEvent); } : undefined}
         onPointerUp={(e) => { if (e.pointerType !== "mouse") handleMouseUp(); }}
         onPointerCancel={(e) => { if (e.pointerType !== "mouse") handleMouseUp(); }}
@@ -7990,76 +7991,37 @@ export const Preview: React.FC = () => {
                 onDoubleClick={(e) => { e.stopPropagation(); if (selectedTextClip) openInlineTextEdit(selectedTextClip); }}
               />
 
-              {/* Move handle (center) */}
+              {/* Move handle (center), small for text (owner, 2026-10-15). */}
               <div
-                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 bg-cyan-500/80 rounded-full flex items-center justify-center cursor-move pointer-events-auto touch-none hover:bg-cyan-500 transition-colors"
+                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 bg-cyan-500/80 rounded-full flex items-center justify-center cursor-move pointer-events-auto touch-none hover:bg-cyan-500 transition-colors"
                 onMouseDown={handleTextClipMouseDown}
                 onPointerDown={touchToMouse(handleTextClipMouseDown)}
                 title="Drag to move text"
               >
-                <Move size={14} className="text-white" />
+                <Move size={9} className="text-white" />
               </div>
 
-              {/* Aspect ratio lock toggle */}
-              <Button
-                label={lockAspectRatio ? "Unlock aspect ratio" : "Lock aspect ratio"}
-                variant="ghost"
-                className={`absolute -top-11 left-1/2 -translate-x-1/2 px-2 py-1 text-[10px] rounded pointer-events-auto transition-colors ${
-                  lockAspectRatio
-                    ? "bg-cyan-500 text-white"
-                    : "bg-background-tertiary text-text-secondary border border-border hover:bg-background-elevated"
-                }`}
-                onClick={() => setLockAspectRatio(!lockAspectRatio)}
-              >
-                {lockAspectRatio ? "🔒 Locked" : "🔓 Free"}
-              </Button>
-
-              {/* Corner resize handles. Character Studio embed (editor QA):
-                  the handles sit just outside the box, so a small caption
-                  (on a phone it is a few pixels tall) can still be dragged
-                  by its box instead of always grabbing a handle. */}
-              <div
-                className="absolute -left-4 -top-4 w-4 h-4 bg-white border-2 border-cyan-500 rounded-sm cursor-nw-resize pointer-events-auto touch-none hover:bg-cyan-500 hover:border-white transition-colors"
-                onMouseDown={(e) => handleTextHandleMouseDown(e, "nw")}
-                onPointerDown={touchToMouse((e) => handleTextHandleMouseDown(e, "nw"))}
-              />
-              <div
-                className="absolute -right-4 -top-4 w-4 h-4 bg-white border-2 border-cyan-500 rounded-sm cursor-ne-resize pointer-events-auto touch-none hover:bg-cyan-500 hover:border-white transition-colors"
-                onMouseDown={(e) => handleTextHandleMouseDown(e, "ne")}
-                onPointerDown={touchToMouse((e) => handleTextHandleMouseDown(e, "ne"))}
-              />
-              <div
-                className="absolute -left-4 -bottom-4 w-4 h-4 bg-white border-2 border-cyan-500 rounded-sm cursor-sw-resize pointer-events-auto touch-none hover:bg-cyan-500 hover:border-white transition-colors"
-                onMouseDown={(e) => handleTextHandleMouseDown(e, "sw")}
-                onPointerDown={touchToMouse((e) => handleTextHandleMouseDown(e, "sw"))}
-              />
-              <div
-                className="absolute -right-4 -bottom-4 w-4 h-4 bg-white border-2 border-cyan-500 rounded-sm cursor-se-resize pointer-events-auto touch-none hover:bg-cyan-500 hover:border-white transition-colors"
-                onMouseDown={(e) => handleTextHandleMouseDown(e, "se")}
-                onPointerDown={touchToMouse((e) => handleTextHandleMouseDown(e, "se"))}
-              />
-
-              {/* Edge resize handles */}
-              <div
-                className="absolute left-1/2 -translate-x-1/2 -top-5 w-6 h-4 bg-white border-2 border-cyan-500 rounded-sm cursor-n-resize pointer-events-auto touch-none hover:bg-cyan-500 hover:border-white transition-colors"
-                onMouseDown={(e) => handleTextHandleMouseDown(e, "n")}
-                onPointerDown={touchToMouse((e) => handleTextHandleMouseDown(e, "n"))}
-              />
-              <div
-                className="absolute left-1/2 -translate-x-1/2 -bottom-5 w-6 h-4 bg-white border-2 border-cyan-500 rounded-sm cursor-s-resize pointer-events-auto touch-none hover:bg-cyan-500 hover:border-white transition-colors"
-                onMouseDown={(e) => handleTextHandleMouseDown(e, "s")}
-                onPointerDown={touchToMouse((e) => handleTextHandleMouseDown(e, "s"))}
-              />
-              <div
-                className="absolute top-1/2 -translate-y-1/2 -left-5 w-4 h-6 bg-white border-2 border-cyan-500 rounded-sm cursor-w-resize pointer-events-auto touch-none hover:bg-cyan-500 hover:border-white transition-colors"
-                onMouseDown={(e) => handleTextHandleMouseDown(e, "w")}
-                onPointerDown={touchToMouse((e) => handleTextHandleMouseDown(e, "w"))}
-              />
-              <div
-                className="absolute top-1/2 -translate-y-1/2 -right-5 w-4 h-6 bg-white border-2 border-cyan-500 rounded-sm cursor-e-resize pointer-events-auto touch-none hover:bg-cyan-500 hover:border-white transition-colors"
-                onMouseDown={(e) => handleTextHandleMouseDown(e, "e")}
-                onPointerDown={touchToMouse((e) => handleTextHandleMouseDown(e, "e"))}
-              />
+              {/* Character Studio embed (owner, 2026-10-15): four small round
+                  handles at the corners, each in a finger-sized hit area that
+                  lies outside the caption, so a small caption (a few pixels
+                  tall on a phone) stays visible and can be dragged by its
+                  box. No Locked button: a caption always grows in
+                  proportion, and never taller than the frame. */}
+              {(["nw", "ne", "sw", "se"] as const).map((h) => (
+                <div
+                  key={h}
+                  data-studio={`text-handle-${h}`}
+                  className="absolute w-6 h-6 pointer-events-auto touch-none group"
+                  style={{ [h[0] === "n" ? "top" : "bottom"]: -24, [h[1] === "w" ? "left" : "right"]: -24, cursor: `${h}-resize` }}
+                  onMouseDown={(e) => handleTextHandleMouseDown(e, h)}
+                  onPointerDown={touchToMouse((e) => handleTextHandleMouseDown(e, h))}
+                >
+                  <span
+                    className="absolute w-2.5 h-2.5 rounded-full bg-white border-2 border-cyan-500 group-hover:bg-cyan-500 transition-colors"
+                    style={{ [h[0] === "n" ? "bottom" : "top"]: -2, [h[1] === "w" ? "right" : "left"]: -2 }}
+                  />
+                </div>
+              ))}
             </div>
           )}
 

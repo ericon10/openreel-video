@@ -7,6 +7,7 @@ import { memoryFile } from "./sink";
 import type { SavedStyle, StyleItem } from "@openreel/core/studio";
 import { applyPreset, cutoutIds, restoreCutouts, styleCaptions } from "./presets/actions";
 import { orderStudioTracks } from "./presets/order";
+import { trackNames, type MediaRole } from "./presets/trackNames";
 import { exportProject, findBeatsInMusic, getMusicInExport, markMusic, musicMediaIds, restoreBeats, savedBeats, type SavedBeats } from "./presets/beat";
 import { appliedPresets, clearApplied, restoreApplied, type AppliedPreset } from "./presets/log";
 import { applyStack, currentStack } from "./presets/styles";
@@ -130,6 +131,8 @@ async function assemble(manifest: StudioManifest, onStep: (s: string) => void, w
       warnings.push((e as Error).message);
     }
   }
+  // Tracks named by what is on them: Shots, B-roll, Voice, Music, Ambience.
+  await nameTracks((mediaId) => manifest.media.find((m) => m.id === ids[mediaId])?.role);
   if (manifest.captions.length) {
     onStep("Adding the captions...");
     // On top: a track paints over the ones below it.
@@ -170,6 +173,12 @@ async function assemble(manifest: StudioManifest, onStep: (s: string) => void, w
   return ids;
 }
 
+// The Studio names the tracks it lays out (owner, 2026-10-15); a name the
+// owner gave a track stays.
+async function nameTracks(roleOf: (mediaId: string) => MediaRole | undefined): Promise<void> {
+  for (const { trackId, name } of trackNames(store().project.timeline.tracks, roleOf)) await store().renameTrack(trackId, name);
+}
+
 // A saved project comes back with its media fetched again from the Studio.
 async function reopen(manifest: StudioManifest, onStep: (s: string) => void, warnings: string[]): Promise<Record<string, string>> {
   const saved = manifest.project!;
@@ -189,6 +198,8 @@ async function reopen(manifest: StudioManifest, onStep: (s: string) => void, war
     }
   }
   store().loadProject({ ...saved, mediaLibrary: { items }, timeline: { ...saved.timeline, tracks: orderStudioTracks(saved.timeline.tracks) } });
+  // Posts saved before the tracks had names get them now.
+  await nameTracks((mediaId) => manifest.media.find((m) => m.id === map[mediaId])?.role);
   if (saved.studioCutouts?.length) {
     onStep("Loading the person cutout...");
     await restoreCutouts(saved.studioCutouts);

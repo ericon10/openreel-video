@@ -377,7 +377,9 @@ export const Toolbar: React.FC = () => {
   ];
 
   return (
-    <header className="h-[60px] flex items-center gap-2 px-2 sm:gap-[18px] sm:px-[18px] bg-bg-1 border-b border-border shrink-0 z-30 relative">
+    // Character Studio embed (owner, 2026-10-15): the Studio bar names the
+    // post, so this row goes and the preview gets its height.
+    <header className={`h-[60px] flex items-center gap-2 px-2 sm:gap-[18px] sm:px-[18px] bg-bg-1 border-b border-border shrink-0 z-30 relative${isStudioEmbed() ? " hidden" : ""}`}>
       {/* ─── Center: project name ─────────────────────────────── */}
       <div className="flex flex-1 min-w-0 items-center justify-center gap-1.5">
         <ToolcraftTextInputControl
