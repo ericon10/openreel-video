@@ -77,6 +77,13 @@ export interface TextStyle {
   readonly letterSpacing: number;
   readonly textDecoration?: TextDecoration;
   readonly shader?: TextShaderStyle;
+  /**
+   * Karaoke (Character Studio embed): when set, the words light up in this
+   * color one after another across the clip, timed by word length. The
+   * caption keeps its own place, look and text; editing or retiming it
+   * keeps the words in step.
+   */
+  readonly highlightColor?: string;
 }
 
 export interface TextShaderStyle {

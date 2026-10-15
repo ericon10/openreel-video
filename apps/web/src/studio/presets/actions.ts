@@ -202,26 +202,23 @@ async function applyText(def: PresetDef, at: number): Promise<PresetResult> {
       s.updateTextBehindSubject(cap.id, true);
       return { ok: true, message: "The caption sits behind her. The first time, the person cutout loads a small model." };
     case "karaoke": {
-      const words = cap.text.split(/\s+/).filter(Boolean);
-      if (!words.length) return { ok: false, message: "This caption has no words." };
-      const total = words.reduce((a, w) => a + w.length + 2, 0);
-      let t = cap.startTime;
-      const timed = words.map((w) => {
-        const d = (cap.duration * (w.length + 2)) / total;
-        const word = { text: w, startTime: t, endTime: t + d };
-        t += d;
-        return word;
-      });
-      await s.addSubtitle({
-        id: uid(), text: cap.text, startTime: cap.startTime, endTime: cap.startTime + cap.duration, words: timed, animationStyle: "karaoke",
-        style: { fontFamily: cap.style.fontFamily, fontSize: Math.max(48, cap.style.fontSize), color: "#ffffff", backgroundColor: "rgba(0,0,0,0)", position: "top", highlightColor: "#ffd60a", upcomingColor: "#ffffff" },
-      });
-      s.deleteTextClip(cap.id);
-      return { ok: true, message: "Karaoke captions: each word lights up in turn. Drag word timings in the Captions panel." };
+      // The caption itself lights up word by word (its place, look and text
+      // stay, and it stays editable). Upstream turned it into a subtitle that
+      // lost all three. Applying it again turns it off.
+      if (!cap.text.trim()) return { ok: false, message: "This caption has no words." };
+      if (cap.style.highlightColor) {
+        s.updateTextStyle(cap.id, { highlightColor: undefined });
+        return { ok: true, message: "Karaoke off for this caption." };
+      }
+      s.updateTextStyle(cap.id, { highlightColor: KARAOKE_COLOR });
+      return { ok: true, message: "Karaoke on this caption: each word lights up in turn. It keeps its place and look; double-click it to change the words." };
     }
   }
   return { ok: false, message: "That text preset is not available." };
 }
+
+// The Studio's karaoke color (config/content.yaml caption.karaoke).
+const KARAOKE_COLOR = "#ffd60a";
 
 export const UPPER_THIRD = 0.26;
 const UPPER_THIRD_Y = UPPER_THIRD;

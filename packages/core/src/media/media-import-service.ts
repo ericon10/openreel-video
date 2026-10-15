@@ -421,7 +421,7 @@ export class MediaImportService {
         format: null,
         error: `Unsupported format: ${
           file.type || "unknown"
-        }. Supported formats: MP4, WebM, MOV, MP3, WAV, AAC, JPG, PNG, WebP`,
+        }. Supported formats: MP4, WebM, MOV, MP3, M4A, WAV, AAC, JPG, PNG, WebP`,
       };
     }
     if (this.mediaEngine.isAvailable()) {

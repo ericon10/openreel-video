@@ -69,6 +69,10 @@ import {
   calculateProjectDuration,
 } from "@openreel/core";
 import { useEngineStore } from "../../stores/engine-store";
+// Character Studio embed: captions measured as drawn, picked and edited in place.
+import { textClipAtPoint, textClipRect } from "../../studio/text/geometry";
+import { InlineTextEdit } from "../../studio/text/InlineTextEdit";
+import { openInlineTextEdit } from "../../studio/text/edit-state";
 import {
   type HandlePosition,
   type InteractionMode,
@@ -6385,65 +6389,9 @@ export const Preview: React.FC = () => {
   const textClipBounds = useMemo(() => {
     if (!selectedTextClip || !canvasRef.current || !overlayRef.current)
       return null;
-
-    const canvas = canvasRef.current;
-    const overlay = overlayRef.current;
-    const overlayRect = overlay.getBoundingClientRect();
-    const canvasRect = canvas.getBoundingClientRect();
-
-    const { transform, style, text } = selectedTextClip;
-
-    const canvasWidth = settings.width;
-    const canvasHeight = settings.height;
-
-    const canvasAspect = canvasWidth / canvasHeight;
-    const elementAspect = canvasRect.width / canvasRect.height;
-
-    let actualWidth: number;
-    let actualHeight: number;
-    let letterboxOffsetX = 0;
-    let letterboxOffsetY = 0;
-
-    if (elementAspect > canvasAspect) {
-      actualHeight = canvasRect.height;
-      actualWidth = actualHeight * canvasAspect;
-      letterboxOffsetX = (canvasRect.width - actualWidth) / 2;
-    } else {
-      actualWidth = canvasRect.width;
-      actualHeight = actualWidth / canvasAspect;
-      letterboxOffsetY = (canvasRect.height - actualHeight) / 2;
-    }
-
-    const displayScale = actualWidth / canvasWidth;
-
-    const lines = text.split("\n");
-    const lineHeight = style.fontSize * style.lineHeight;
-    const estimatedHeight = lines.length * lineHeight;
-    const estimatedWidth =
-      style.fontSize * Math.max(...lines.map((l) => l.length)) * 0.6;
-
-    const textWidth = estimatedWidth * transform.scale.x * displayScale;
-    const textHeight = estimatedHeight * transform.scale.y * displayScale;
-
-    const posX = transform.position.x * canvasWidth * displayScale;
-    const posY = transform.position.y * canvasHeight * displayScale;
-
-    const canvasOffsetX = canvasRect.left - overlayRect.left + letterboxOffsetX;
-    const canvasOffsetY = canvasRect.top - overlayRect.top + letterboxOffsetY;
-
-    const centerX = canvasOffsetX + posX;
-    const centerY = canvasOffsetY + posY;
-
-    return {
-      x: centerX - textWidth / 2,
-      y: centerY - textHeight / 2,
-      width: textWidth,
-      height: textHeight,
-      centerX,
-      centerY,
-      displayScale,
-      isTextClip: true,
-    };
+    // Measured with the same wrapped lines the renderer draws (Studio QA).
+    const r = textClipRect(selectedTextClip, settings, canvasRef.current, overlayRef.current);
+    return { ...r, isTextClip: true };
   }, [selectedTextClip, settings.width, settings.height, canvasSize]);
 
   const selectedShapeClipId = useMemo(() => {
@@ -7032,13 +6980,34 @@ export const Preview: React.FC = () => {
     (e: React.MouseEvent) => {
       if (interactionMode !== "none") return;
 
+      // Character Studio embed: a click on a caption selects it.
+      if (canvasRef.current && overlayRef.current) {
+        const text = textClipAtPoint(allTextClips, playheadPosition, timelineTracks.map((t) => t.id), settings, canvasRef.current, overlayRef.current, e.clientX, e.clientY);
+        if (text) {
+          select({ type: "text-clip", id: text.id, trackId: text.trackId });
+          e.stopPropagation();
+          return;
+        }
+      }
       const clip = findGraphicClipAtPoint(e.clientX, e.clientY);
       if (clip) {
         select({ type: "shape-clip", id: clip.id });
         e.stopPropagation();
       }
     },
-    [interactionMode, findGraphicClipAtPoint, select],
+    [interactionMode, findGraphicClipAtPoint, select, allTextClips, playheadPosition, timelineTracks, settings],
+  );
+
+  // Character Studio embed: a double-click on a caption edits it in place.
+  const handleGraphicsDoubleClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (!canvasRef.current || !overlayRef.current) return;
+      const text = textClipAtPoint(allTextClips, playheadPosition, timelineTracks.map((t) => t.id), settings, canvasRef.current, overlayRef.current, e.clientX, e.clientY);
+      if (!text) return;
+      e.stopPropagation();
+      openInlineTextEdit(text);
+    },
+    [allTextClips, playheadPosition, timelineTracks, settings],
   );
 
   const handleMouseMove = useCallback(
@@ -7718,6 +7687,7 @@ export const Preview: React.FC = () => {
           }
           onMouseMove={!isPlaying ? handleGraphicsMouseMove : undefined}
           onClick={!isPlaying ? handleGraphicsClick : undefined}
+          onDoubleClick={!isPlaying ? handleGraphicsDoubleClick : undefined}
           onMouseLeave={() => setHoveredGraphicClipId(null)}
         >
           <canvas
@@ -7960,8 +7930,15 @@ export const Preview: React.FC = () => {
                 height: textClipBounds.height,
               }}
             >
-              {/* Selection border - cyan for text clips */}
-              <div className="absolute inset-0 border-2 border-cyan-500 pointer-events-none" />
+              {/* Selection border - cyan for text clips. Character Studio
+                  embed: drag the caption itself to move it; double-click it
+                  to edit the words. */}
+              <div
+                className="absolute inset-0 border-2 border-cyan-500 cursor-move pointer-events-auto"
+                data-studio="text-box"
+                onMouseDown={handleTextClipMouseDown}
+                onDoubleClick={(e) => { e.stopPropagation(); if (selectedTextClip) openInlineTextEdit(selectedTextClip); }}
+              />
 
               {/* Move handle (center) */}
               <div
@@ -8023,6 +8000,9 @@ export const Preview: React.FC = () => {
               />
             </div>
           )}
+
+          {/* Character Studio embed: edit a caption in place */}
+          <InlineTextEdit canvas={canvasRef.current} overlay={overlayRef.current} project={settings} />
 
           {/* Shape Clip Resize/Transform Overlay */}
           {showShapeClipHandles && shapeClipBounds && (

@@ -43,6 +43,29 @@ export interface UpdateTextClipOptions {
   text3d?: import("./types").Text3DSettings | undefined;
 }
 
+// The widest a line of text may be, in the text's own units, so that once
+// scaled it fits in 90% of the frame.
+// Karaoke (Character Studio embed): how many words are lit at a time in
+// the clip. Words share the clip by length (plus a beat for the gap), the
+// same split the Studio's karaoke edit uses; past and current words are lit.
+export function karaokeLitWords(text: string, duration: number, time: number): number {
+  const words = text.split(/\s+/).filter(Boolean);
+  if (!words.length || duration <= 0) return 0;
+  const total = words.reduce((a, w) => a + w.length + 2, 0);
+  let t = 0;
+  let lit = 0;
+  for (const w of words) {
+    if (time + 1e-6 < t) break;
+    lit++;
+    t += (duration * (w.length + 2)) / total;
+  }
+  return lit;
+}
+
+export function wrapWidthFor(frameWidth: number, scaleX: number): number {
+  return (frameWidth * 0.9) / Math.max(0.05, Math.abs(scaleX) || 1);
+}
+
 export class TitleEngine {
   private textClips: Map<string, TextClip> = new Map();
   private canvas: HTMLCanvasElement | OffscreenCanvas | null = null;
@@ -266,7 +289,10 @@ export class TitleEngine {
       };
     }
 
-    const metrics = this.measureText(visibleText, style, width);
+    // Wrap inside the frame (90% of its width at the text's own scale):
+    // measured and drawn with the same lines, so long captions never run
+    // off the edges (Character Studio editor QA, 2026-10-15).
+    const metrics = this.measureText(visibleText, style, wrapWidthFor(width, transform.scale.x * contentScale.x));
 
     ctx.save();
 
@@ -283,7 +309,7 @@ export class TitleEngine {
 
     this.applyTextStyle(ctx, style);
 
-    const lines = visibleText.split("\n");
+    const lines = metrics.lines.map((l) => l.text);
     const lineHeight = style.fontSize * style.lineHeight;
     const totalHeight = lines.length * lineHeight;
     let startY = -totalHeight / 2 + lineHeight / 2;
@@ -301,12 +327,26 @@ export class TitleEngine {
       ctx.fillRect(-bgWidth / 2, -bgHeight / 2, bgWidth, bgHeight);
     }
 
+    // Karaoke: lit words take the highlight color; on a box look the word's
+    // box lights up instead and the text keeps its color, as in the Studio.
+    const lit = style.highlightColor ? karaokeLitWords(visibleText, clip.duration, time) : -1;
+    const boxed = !!style.backgroundColor && !/^(transparent|rgba\([^)]*,\s*0(\.0+)?\))$/i.test(style.backgroundColor.replace(/\s+/g, " ").trim());
+    const isLit = (index: number) => lit >= 0 && index < lit;
+    const wordColor = (index: number) => (isLit(index) && !boxed ? style.highlightColor! : style.color);
+    const lightBox = (index: number, x: number, y: number, w: number, pad: number) => {
+      if (!boxed || !isLit(index)) return;
+      ctx.fillStyle = style.highlightColor!;
+      ctx.fillRect(x - pad, y - lineHeight / 2, w + 2 * pad, lineHeight);
+    };
+
     if (characterStates && characterStates.length > 0) {
       let charIdx = 0;
+      let wordIdx = -1;
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         const y = startY + i * lineHeight;
         let xOffset = 0;
+        let inWord = false;
 
         const lineWidth = ctx.measureText(line).width;
         const startX =
@@ -317,6 +357,8 @@ export class TitleEngine {
               : 0;
 
         for (const char of line) {
+          if (/\s/.test(char)) inWord = false;
+          else if (!inWord) { inWord = true; wordIdx++; }
           if (charIdx < characterStates.length) {
             const charState = characterStates[charIdx];
             const charWidth = ctx.measureText(char).width;
@@ -330,12 +372,13 @@ export class TitleEngine {
             ctx.rotate((charState.rotation * Math.PI) / 180);
             ctx.scale(charState.scale, charState.scale);
 
+            if (inWord) lightBox(wordIdx, -charWidth / 2, 0, charWidth, 0);
             if (style.strokeColor && style.strokeWidth) {
               ctx.strokeStyle = style.strokeColor;
               ctx.lineWidth = style.strokeWidth;
               ctx.strokeText(char, 0, 0);
             }
-            ctx.fillStyle = style.color;
+            ctx.fillStyle = wordColor(wordIdx);
             ctx.fillText(char, 0, 0);
             ctx.restore();
 
@@ -346,6 +389,7 @@ export class TitleEngine {
         charIdx++;
       }
     } else {
+      let wordIdx = 0;
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         const y = startY + i * lineHeight;
@@ -364,8 +408,26 @@ export class TitleEngine {
           ctx.strokeText(line, 0, y);
         }
 
-        ctx.fillStyle = style.color;
-        ctx.fillText(line, 0, y);
+        if (lit < 0) {
+          ctx.fillStyle = style.color;
+          ctx.fillText(line, 0, y);
+          continue;
+        }
+        // Karaoke: the same line, filled word by word at the offsets the
+        // whole line would have, so lit words sit exactly where they were.
+        const lineWidth = ctx.measureText(line).width;
+        const startX = style.textAlign === "center" ? -lineWidth / 2 : style.textAlign === "right" ? -lineWidth : 0;
+        const align = ctx.textAlign;
+        ctx.textAlign = "left";
+        const re = /\S+/g;
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(line))) {
+          const x = startX + ctx.measureText(line.slice(0, m.index)).width;
+          lightBox(wordIdx, x, y, ctx.measureText(m[0]).width, 6);
+          ctx.fillStyle = wordColor(wordIdx++);
+          ctx.fillText(m[0], x, y);
+        }
+        ctx.textAlign = align;
       }
     }
 

@@ -30,6 +30,11 @@ export const SUPPORTED_AUDIO_FORMATS = [
   "audio/aac",
   "audio/flac",
   "audio/webm",
+  // M4A (AAC in an MP4 box): music from phones and from the Studio's sound
+  // library. MediaBunny reads it; only this list kept it out.
+  "audio/mp4",
+  "audio/x-m4a",
+  "audio/m4a",
 ];
 
 export const SUPPORTED_IMAGE_FORMATS = [
@@ -317,7 +322,7 @@ export class MediaBunnyEngine {
         format: null,
         error: `Unsupported format: ${
           mimeType || "unknown"
-        }. Supported formats: MP4, WebM, MOV, MP3, WAV, AAC, JPG, PNG, WebP`,
+        }. Supported formats: MP4, WebM, MOV, MP3, M4A, WAV, AAC, JPG, PNG, WebP`,
       };
     }
 

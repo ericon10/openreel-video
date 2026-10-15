@@ -9,6 +9,7 @@ import { calculateSnap } from "./utils";
 import { useProjectStore } from "../../../stores/project-store";
 import { useTimelineStore } from "../../../stores/timeline-store";
 import { useUIStore } from "../../../stores/ui-store";
+import { openInlineTextEdit } from "../../../studio/text/edit-state";
 
 interface TextClipComponentProps {
   textClip: TextClip;
@@ -246,6 +247,11 @@ export const TextClipComponent: React.FC<TextClipComponentProps> = ({
           aria-pressed={isSelected}
           data-locked={locked}
           onClick={handleClick}
+          onDoubleClick={(event) => {
+            // Character Studio embed: double-click a caption to edit its words.
+            event.stopPropagation();
+            openInlineTextEdit(textClip);
+          }}
           data-timeline-clip
           onPointerDown={touchGesture.bodyPointerDown}
           onMouseDown={handleMouseDown}

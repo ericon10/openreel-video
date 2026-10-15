@@ -1,5 +1,6 @@
 import type { Project } from "@openreel/core";
-import { getExportEngine } from "@openreel/core";
+import { AudioDucker, getExportEngine } from "@openreel/core";
+import { buildTriggerTrackBuffer } from "../components/editor/inspector/AudioDuckingSection";
 import { useProjectStore } from "../stores/project-store";
 import type { StudioParams } from "./params";
 import { memoryFile } from "./sink";
@@ -48,6 +49,9 @@ export interface StudioManifest {
   stack?: StyleItem[] | null;
   // The account's saved styles, for the Presets tab.
   styles?: SavedStyle[];
+  // The post's sound bed: duck the music under the voice (or the clip's own
+  // sound), as the Studio's render does.
+  sound?: { duck: boolean; clipSound: boolean };
   // The saved editor project (media blobs left out), when the post was
   // edited before.
   project: (Project & StudioExtras) | null;
@@ -80,7 +84,8 @@ async function fetchFile(m: StudioMedia): Promise<File> {
   if (!res.ok) throw new Error(`${m.name} could not be loaded (${res.status}).`);
   const blob = await res.blob();
   const type = blob.type || (m.kind === "video" ? "video/mp4" : m.kind === "audio" ? "audio/mpeg" : "image/png");
-  const ext = type.split("/")[1]?.replace("mpeg", "mp3").replace("quicktime", "mov") || "bin";
+  // M4A music is served as audio/mp4: name it .m4a, not .mp4.
+  const ext = type === "audio/mp4" ? "m4a" : type.split("/")[1]?.replace("mpeg", "mp3").replace("quicktime", "mov") || "bin";
   return new File([blob], `${m.name}.${ext}`, { type, lastModified: 0 });
 }
 
@@ -99,20 +104,31 @@ async function importOne(m: StudioMedia): Promise<string> {
 // A new timeline from the post: its shots in order on the video track,
 // B-roll where the cut puts it, the sound bed on audio tracks, and the
 // captions as text.
-async function assemble(manifest: StudioManifest, onStep: (s: string) => void): Promise<Record<string, string>> {
+async function assemble(manifest: StudioManifest, onStep: (s: string) => void, warnings: string[]): Promise<Record<string, string>> {
   const { width, height, fps } = manifest.canvas;
   store().createNewProject(manifest.post.title || "Studio post", { width, height, frameRate: fps });
   const ids: Record<string, string> = {};
   clearApplied();
   for (const [i, m] of manifest.media.entries()) {
     onStep(`Loading ${m.name} (${i + 1} of ${manifest.media.length})...`);
-    const mediaId = await importOne(m);
-    ids[mediaId] = m.id;
-    if (m.role === "music") markMusic(mediaId);
-    const placed = await store().placeMediaClip(mediaId, undefined, m.start);
-    if (!placed.success) throw new Error(`${m.name}: ${placed.error?.message ?? "could not be placed"}`);
-    const clip = store().project.timeline.tracks.flatMap((t) => t.clips).find((c) => c.mediaId === mediaId);
-    if (clip && (m.in > 0 || m.out != null)) await store().trimClip(clip.id, m.in, m.out ?? undefined);
+    // One file that does not load leaves the rest of the post editable
+    // (editor QA 2026-10-15: unsupported music used to stop the whole open).
+    try {
+      const mediaId = await importOne(m);
+      ids[mediaId] = m.id;
+      if (m.role === "music") markMusic(mediaId);
+      const placed = await store().placeMediaClip(mediaId, undefined, m.start);
+      if (!placed.success) throw new Error(`${m.name}: ${placed.error?.message ?? "could not be placed"}`);
+      const clip = store().project.timeline.tracks.flatMap((t) => t.clips).find((c) => c.mediaId === mediaId);
+      // Sound ends with the post, as in the Studio's render: a longer music
+      // bed used to stretch the timeline and Done's export past the video
+      // (editor QA, 2026-10-15).
+      const soundEnd = m.kind === "audio" && clip && m.start + clip.duration - m.in > manifest.duration + 0.01 ? m.in + Math.max(0.1, manifest.duration - m.start) : null;
+      const out = m.out != null && soundEnd != null ? Math.min(m.out, soundEnd) : m.out ?? soundEnd;
+      if (clip && (m.in > 0 || out != null)) await store().trimClip(clip.id, m.in, out ?? undefined);
+    } catch (e) {
+      warnings.push((e as Error).message);
+    }
   }
   if (manifest.captions.length) {
     onStep("Adding the captions...");
@@ -129,6 +145,12 @@ async function assemble(manifest: StudioManifest, onStep: (s: string) => void): 
       // The same look and place the Studio's own render gives them.
       styleCaptions(manifest.captionLook?.style ?? "box", manifest.captionLook?.position ?? "upper_third");
     }
+  }
+  // The music ducked under the voice (or the clip's own sound), as the
+  // Studio's render does; the export follows the volume keys it writes.
+  if (manifest.sound?.duck !== false) {
+    onStep("Ducking the music under the voice...");
+    await duckMusic(ids, manifest, warnings);
   }
   // The suggested spots as markers; the beat of the post's music.
   for (const spot of manifest.suggestions ?? []) await store().addMarker(spot.time, spot.label, "#ff6a3d");
@@ -149,7 +171,7 @@ async function assemble(manifest: StudioManifest, onStep: (s: string) => void): 
 }
 
 // A saved project comes back with its media fetched again from the Studio.
-async function reopen(manifest: StudioManifest, onStep: (s: string) => void): Promise<Record<string, string>> {
+async function reopen(manifest: StudioManifest, onStep: (s: string) => void, warnings: string[]): Promise<Record<string, string>> {
   const saved = manifest.project!;
   const map = saved.studioMedia ?? {};
   const items = [];
@@ -158,8 +180,13 @@ async function reopen(manifest: StudioManifest, onStep: (s: string) => void): Pr
     const m = manifest.media.find((x) => x.id === assetId);
     if (!m) { items.push(item); continue; }
     onStep(`Loading ${m.name}...`);
-    const file = await fetchFile(m);
-    items.push({ ...item, blob: file, fileHandle: null, isPlaceholder: false });
+    try {
+      const file = await fetchFile(m);
+      items.push({ ...item, blob: file, fileHandle: null, isPlaceholder: false });
+    } catch (e) {
+      warnings.push((e as Error).message);
+      items.push(item);
+    }
   }
   store().loadProject({ ...saved, mediaLibrary: { items }, timeline: { ...saved.timeline, tracks: orderStudioTracks(saved.timeline.tracks) } });
   if (saved.studioCutouts?.length) {
@@ -177,18 +204,45 @@ async function reopen(manifest: StudioManifest, onStep: (s: string) => void): Pr
   for (const m of manifest.media) {
     if (m.role !== "voice" || known.has(m.id)) continue;
     onStep(`Adding the voiceover ${m.name}...`);
-    const mediaId = await importOne(m);
-    map[mediaId] = m.id;
-    await store().placeMediaClip(mediaId, undefined, m.start);
+    try {
+      const mediaId = await importOne(m);
+      map[mediaId] = m.id;
+      await store().placeMediaClip(mediaId, undefined, m.start);
+    } catch (e) {
+      warnings.push((e as Error).message);
+    }
   }
   return map;
 }
 
-export async function openPost(p: StudioParams, onStep: (s: string) => void): Promise<{ manifest: StudioManifest; media: Record<string, string> }> {
+export async function openPost(p: StudioParams, onStep: (s: string) => void): Promise<{ manifest: StudioManifest; media: Record<string, string>; warnings: string[] }> {
   onStep("Opening the post...");
   const manifest = await loadManifest(p);
-  const media = manifest.project ? await reopen(manifest, onStep) : await assemble(manifest, onStep);
-  return { manifest, media };
+  const warnings: string[] = [];
+  const media = manifest.project ? await reopen(manifest, onStep, warnings) : await assemble(manifest, onStep, warnings);
+  return { manifest, media, warnings };
+}
+
+// Studio ducking: OpenReel's ducker on each music clip, triggered by the
+// voiceover track (or the footage when the clip keeps its own sound).
+const DUCK = { threshold: -30, reduction: 0.7, attack: 0.1, release: 0.3, holdTime: 0.2 };
+async function duckMusic(ids: Record<string, string>, manifest: StudioManifest, warnings: string[]): Promise<void> {
+  const roleOf = (mediaId: string) => manifest.media.find((m) => m.id === ids[mediaId])?.role;
+  const tracks = store().project.timeline.tracks;
+  const trackWith = (role: string) => tracks.find((t) => t.clips.some((c) => roleOf(c.mediaId) === role));
+  const trigger = trackWith("voice") ?? (manifest.sound?.clipSound !== false ? trackWith("clip") : undefined);
+  if (!trigger) return;
+  for (const t of tracks) for (const clip of t.clips) {
+    if (roleOf(clip.mediaId) !== "music") continue;
+    try {
+      const buffer = await buildTriggerTrackBuffer(store().project, clip, trigger);
+      const settings = { enabled: true, sourceTrackId: trigger.id, ...DUCK };
+      const keys = new AudioDucker().generateDuckingKeyframes(buffer, settings, clip.volume > 0 ? clip.volume : 1);
+      if (keys.length) store().setClipAudioDucking(clip.id, settings, keys);
+    } catch (e) {
+      warnings.push(`The music could not be ducked (${(e as Error).message}). Set it in the music clip's Audio Ducking.`);
+    }
+  }
 }
 
 // The project as JSON for the Studio: no blobs, file handles or object

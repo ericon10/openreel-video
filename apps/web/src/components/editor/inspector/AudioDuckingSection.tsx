@@ -147,7 +147,8 @@ const DuckingSlider: React.FC<DuckingSliderProps> = ({
   </div>
 );
 
-const buildTriggerTrackBuffer = async (
+// Character Studio embed: also used to duck the post's music on first open.
+export const buildTriggerTrackBuffer = async (
   project: Project,
   backgroundClip: Clip,
   sourceTrack: Track,

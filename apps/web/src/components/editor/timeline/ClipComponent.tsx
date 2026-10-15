@@ -23,6 +23,7 @@ import { parseEditorEffectDropPayload } from "./effect-drop";
 import { getVisibleRepeatRange } from "./visible-repeat-range";
 import { isStudioEmbed } from "../../../studio/params";
 import { rippleAfterTrim } from "../../../studio/presets/ripple";
+import { reorderOnDrop } from "../../../studio/presets/reorder";
 
 interface ClipComponentProps {
   clip: Clip;
@@ -591,7 +592,11 @@ export const ClipComponent: React.FC<ClipComponentProps> = ({
       pendingCommit?.();
 
       const { time, targetTrackId } = pendingDropRef.current;
-      await onMoveClip(clip.id, time, targetTrackId ?? track.id);
+      // Character Studio embed: a shot dropped on another shot of its own
+      // track reorders the shots instead of stacking it on a new track.
+      const reordered = isStudioEmbed() && (!targetTrackId || targetTrackId === track.id)
+        && await reorderOnDrop(clip.id, dragStartTimeRef.current, time);
+      if (!reordered) await onMoveClip(clip.id, time, targetTrackId ?? track.id);
 
       setIsDragging(false);
       setDragYOffset(0);

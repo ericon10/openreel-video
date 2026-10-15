@@ -18,7 +18,13 @@ only these small hooks:
 | `apps/web/src/components/editor/timeline/TrackLane.tsx` | A preset block renders as `PresetBlock` (drag, trim, select) |
 | `apps/web/src/components/editor/Toolbar.tsx` | OpenReel's Export is hidden in the Studio; Done exports |
 | `apps/web/src/components/editor/timeline/utils.ts` | Clips also snap to beats and markers in the Studio |
-| `apps/web/src/components/editor/timeline/ClipComponent.tsx` | Ripple trim after a trim gesture (`studio/presets/ripple.ts`) |
+| `apps/web/src/components/editor/timeline/ClipComponent.tsx` | Ripple trim after a trim gesture (`studio/presets/ripple.ts`); a shot dropped onto another on the same track swaps into place (`studio/presets/reorder.ts`) instead of stacking on a new track |
+| `apps/web/src/components/editor/Preview.tsx` (captions) | A click on a caption selects it, a double-click (or a double-tap) edits it in place (`studio/text/`), and the selection box is measured from the wrapped lines (`studio/text/geometry.ts`) and drags the caption |
+| `apps/web/src/components/editor/timeline/TextClipComponent.tsx` | A double-click on a caption block edits it in place |
+| `packages/core/src/text/title-engine.ts` | Captions wrap inside the frame (`wrapWidthFor`), measured and drawn with the same lines; `TextStyle.highlightColor` lights the words in turn (karaoke, `karaokeLitWords`) in the preview and the export |
+| `packages/core/src/text/types.ts` | `TextStyle.highlightColor` |
+| `packages/core/src/media/mediabunny-engine.ts`, `media-import-service.ts` | M4A (AAC) audio imports; the Studio stores uploaded music that way |
+| `apps/web/src/components/editor/inspector/AudioDuckingSection.tsx` | `buildTriggerTrackBuffer` is exported so the Studio ducks the music under the voice when a post opens |
 
 How it works: the Studio serves the built editor at `/editor/` with
 cross-origin isolation headers and opens it as
@@ -37,9 +43,10 @@ zoom, move, rotate, blur, streak, RGB split, shake, flash, dark, colour,
 brightness, vignette), scaled by Subtle, Normal or Strong. `cameraAt` is
 pure and unit tested; the Studio's worker mirrors it for batch renders.
 Time presets use OpenReel's speed engine (ramps, freeze, reverse); text
-presets use its text animations, behind-subject text and karaoke
-subtitles; layouts use transforms, crops and the person cutout. Track
-order: captions, Presets, footage, audio (`apps/web/src/studio/presets/order.ts`).
+presets use its text animations, behind-subject text and karaoke (the
+caption's own words light up; it keeps its place, look and text);
+layouts use transforms, crops and the person cutout. Track order:
+captions, Presets, footage, audio (`apps/web/src/studio/presets/order.ts`).
 
 Beat sync (`apps/web/src/studio/presets/beat.ts`): the beat of the post's
 music (found when the editor opens), of a track added in the Beat card, a
@@ -51,6 +58,16 @@ relative places (payoff, cut, beat, start, end), saved per account in the
 Studio and carried by "Make another like this". Beats, music, the export
 switch and the non-block presets are saved in the project JSON
 (`studioBeats`, `studioMusic`, `studioMusicInExport`, `studioApplied`).
+
+Opening a post (`apps/web/src/studio/bridge.ts`): a file that does not
+load is named in the bar and the rest of the post opens; sound ends with
+the post; the music is ducked under the voice (or the clip's sound) with
+OpenReel's ducker. `StudioEditor.tsx` fits the editor under the Studio's
+bar (the phone tabs stay on screen) and redraws the first frame while the
+clips finish loading.
+
+Tests: the Studio repo drives this editor like a user with Playwright
+(`e2e/editor/`, `npm run e2e:editor` against `npm run studio`).
 
 Build (from the Studio repo): `npm run build:editor`. License: MIT
 (Augustus Otu and Contributors); the Studio shows it in Settings, Notices.

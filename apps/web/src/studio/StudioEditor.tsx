@@ -16,7 +16,7 @@ import type { StudioParams } from "./params";
 // saves it with the project to the post, and returns to the Finish step.
 // Every button shows what it is doing; errors say what to do next.
 
-type Phase = { kind: "loading"; step: string } | { kind: "ready" } | { kind: "saving"; step: string } | { kind: "error"; message: string; retry: "open" | "save" };
+type Phase = { kind: "loading"; step: string } | { kind: "ready"; notice?: string } | { kind: "saving"; step: string } | { kind: "error"; message: string; retry: "open" | "save" };
 
 const bar: React.CSSProperties = {
   position: "fixed", top: 0, left: 0, right: 0, height: 40, zIndex: 9999, display: "flex", alignItems: "center", gap: 12,
@@ -48,7 +48,12 @@ export function StudioEditor({ params }: { params: StudioParams }) {
         ...(r.manifest.suggestions ?? []),
         ...cuts().map((time, i) => ({ label: `Cut ${i + 1}`, time, why: "Between two shots: a good place for a transition." })),
       ].sort((a, b) => a.time - b.time));
-      setPhase({ kind: "ready" });
+      // A file that did not load is named; the rest of the post is here.
+      setPhase({ kind: "ready", notice: r.warnings.length ? `Opened without: ${r.warnings.join(" ")} The rest of the post is here.` : undefined });
+      // The preview's first frame is drawn before the clips can be decoded
+      // and stayed black until a seek or Play (editor QA, 2026-10-15):
+      // redraw it a few times while they finish loading.
+      for (const ms of [300, 1000, 2500, 5000]) setTimeout(() => window.dispatchEvent(new Event("openreel:preview-invalidate")), ms);
     } catch (e) {
       setPhase({ kind: "error", message: (e as Error).message, retry: "open" });
     }
@@ -84,7 +89,7 @@ export function StudioEditor({ params }: { params: StudioParams }) {
       <div style={bar} role="toolbar" aria-label="Character Studio">
         <button type="button" style={btn(false)} disabled={phase.kind === "saving"} onClick={() => window.location.assign(params.back)}>Back to the post</button>
         <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", opacity: 0.85 }}>
-          {phase.kind === "error" ? <span style={{ color: "#ff8a6a" }}>{phase.message}</span> : busy ? phase.step : title ? `Editing: ${title}` : "Editing"}
+          {phase.kind === "error" ? <span style={{ color: "#ff8a6a" }}>{phase.message}</span> : busy ? phase.step : phase.kind === "ready" && phase.notice ? <span role="status" style={{ color: "#ffc76a" }} title={phase.notice}>{phase.notice}</span> : title ? `Editing: ${title}` : "Editing"}
         </span>
         <label style={{ display: "flex", alignItems: "center", gap: 6, opacity: 0.85 }} title="Trim a shot shorter and the shots after it slide over, so no gap opens">
           <input type="checkbox" checked={ripple} onChange={(e) => { setRipple(e.target.checked); setRippleState(e.target.checked); }} />
@@ -95,7 +100,11 @@ export function StudioEditor({ params }: { params: StudioParams }) {
           {phase.kind === "saving" ? "Saving..." : "Done"}
         </button>
       </div>
-      <div style={{ position: "fixed", top: 40, left: 0, right: 0, bottom: 0 }}>
+      {/* The editor fills the space under this bar. Upstream sizes it to the
+          whole screen, which pushed its bottom 40 px (the phone tabs, the
+          end of the timeline) off the page (editor QA, 2026-10-15). */}
+      <style>{".studio-embed-app > div, .studio-embed-app .editor-compact { height: 100% !important; }"}</style>
+      <div className="studio-embed-app" style={{ position: "fixed", top: 40, left: 0, right: 0, bottom: 0 }}>
         {phase.kind === "loading" ? (
           <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#f5ede4", font: "500 14px system-ui" }}>{phase.step}</div>
         ) : (
