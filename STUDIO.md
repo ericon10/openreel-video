@@ -25,6 +25,11 @@ only these small hooks:
 | `packages/core/src/text/types.ts` | `TextStyle.highlightColor` |
 | `packages/core/src/media/mediabunny-engine.ts`, `media-import-service.ts` | M4A (AAC) audio imports; the Studio stores uploaded music that way |
 | `apps/web/src/components/editor/inspector/AudioDuckingSection.tsx` | `buildTriggerTrackBuffer` is exported so the Studio ducks the music under the voice when a post opens |
+| `apps/web/src/components/editor/Preview.tsx` (usability) | Four small corner dots just outside a caption (finger-sized hit areas), no Locked button on text, a uniform resize capped at the frame's height (`capScaleToFrame` in `studio/text/geometry.ts`), and a click on empty space clears the selection |
+| `apps/web/src/components/editor/timeline/TrackLane.tsx` (markers) | The Presets track shows a marker for each freeze and speed ramp (`studio/presets/TimeMarkers.tsx`, `markers.ts`); a click selects the shot and opens its Speed Curves section (on a phone, the Edit tab) |
+| `apps/web/src/components/editor/timeline/ClipComponent.tsx` (speed) | A shot shows its speed on its block: 2x, Ramp, Freeze (`speedLabel`) |
+| `apps/web/src/components/editor/EditorInterface.tsx`, `Toolbar.tsx` | A bigger preview in the Studio: the timeline starts shorter and the header bar is hidden; listens for `openreel:compact-panel` to switch the phone tab |
+| `apps/web/src/studio/bridge.ts` (track names) | The tracks the Studio lays out are named by what they hold: Shots, B-roll, Voice, Music, Ambience (`studio/presets/trackNames.ts`); a freeze or ramp makes sure the Presets track exists |
 
 How it works: the Studio serves the built editor at `/editor/` with
 cross-origin isolation headers and opens it as
