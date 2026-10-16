@@ -1,5 +1,5 @@
 import React, { useLayoutEffect, useState } from "react";
-import { ZONES, bandBox, type Box } from "./zones";
+import { ZONES, bandBox, containBox, type Box } from "./zones";
 import { useSafeZones } from "./state";
 
 // The app's own buttons and captions drawn over the preview (TikTok or
@@ -12,7 +12,10 @@ export const SafeZones: React.FC<{ canvas: HTMLElement | null; overlay: HTMLElem
     const measure = () => {
       const o = overlay.getBoundingClientRect();
       const c = canvas.getBoundingClientRect();
-      setBox({ left: c.left - o.left, top: c.top - o.top, width: c.width, height: c.height });
+      // The drawn picture, not the whole element (object-contain letterbox).
+      const cv = canvas as HTMLCanvasElement;
+      const aspect = cv.width && cv.height ? cv.width / cv.height : c.width / c.height;
+      setBox(containBox({ left: c.left - o.left, top: c.top - o.top, width: c.width, height: c.height }, aspect));
     };
     measure();
     const ro = new ResizeObserver(measure);

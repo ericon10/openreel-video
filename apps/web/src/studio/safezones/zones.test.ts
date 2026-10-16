@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ZONES, bandBox, covered } from "./zones";
+import { ZONES, bandBox, containBox, covered } from "./zones";
 
 describe("safe zones", () => {
   it("places each band on the canvas, in the overlay's pixels", () => {
@@ -21,5 +21,12 @@ describe("safe zones", () => {
       expect(b.x + b.w).toBeLessThanOrEqual(1);
       expect(b.y + b.h).toBeLessThanOrEqual(1.0001);
     }
+  });
+  it("keeps to the drawn picture inside a wider or taller canvas element (object-contain)", () => {
+    // A phone: the element is 2 px wider than 9:16; the picture is centred.
+    expect(containBox({ left: 0, top: 0, width: 220, height: 384 }, 9 / 16)).toEqual({ left: 2, top: 0, width: 216, height: 384 });
+    expect(containBox({ left: 10, top: 0, width: 360, height: 700 }, 9 / 16)).toEqual({ left: 10, top: 30, width: 360, height: 640 });
+    // An exact fit is unchanged.
+    expect(containBox({ left: 0, top: 0, width: 360, height: 640 }, 9 / 16)).toEqual({ left: 0, top: 0, width: 360, height: 640 });
   });
 });

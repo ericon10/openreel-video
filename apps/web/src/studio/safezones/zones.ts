@@ -28,6 +28,17 @@ export const ZONES: Record<Exclude<SafeZoneApp, "off">, { label: string; bands: 
 
 export interface Box { left: number; top: number; width: number; height: number }
 
+// The picture inside the canvas element: the preview draws it with
+// object-contain, so a box wider or taller than the video's shape has a
+// letterbox the bands must stay out of.
+export function containBox(el: Box, aspect: number): Box {
+  if (!(aspect > 0) || !el.width || !el.height) return el;
+  let width = el.width, height = el.height;
+  if (width / height > aspect) width = height * aspect;
+  else height = width / aspect;
+  return { left: el.left + (el.width - width) / 2, top: el.top + (el.height - height) / 2, width, height };
+}
+
 // A band in the overlay's pixels, from the canvas box inside it.
 export function bandBox(b: Band, canvas: Box): Box {
   return { left: canvas.left + b.x * canvas.width, top: canvas.top + b.y * canvas.height, width: b.w * canvas.width, height: b.h * canvas.height };
