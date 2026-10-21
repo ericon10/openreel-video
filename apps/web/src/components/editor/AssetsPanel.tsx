@@ -117,8 +117,14 @@ const ASSETS_TABS: ReadonlyArray<{
   },
 ] satisfies ReadonlyArray<{ value: AssetsTab; label: string; description: string }>).filter((tab) => tab.value !== "presets" || isStudioEmbed());
 
+// Studio embed (owner, 2026-10-22): the text presets are sized for a
+// 9:16 phone frame (1080x1920) and scaled to the project's height when
+// added, so a Caption reads on a phone instead of sitting at 24 px. Sizes,
+// outlines, spacing and shadows all scale together.
+export const TEXT_PRESET_BASE_HEIGHT = 1920;
+
 export const DEFAULT_TITLE_STYLE: Partial<TextStyle> = {
-  fontSize: 96,
+  fontSize: 120,
   fontWeight: 800,
   letterSpacing: -1,
 };
@@ -128,13 +134,13 @@ export const TEXT_STYLE_PRESETS: ReadonlyArray<{
   text: string;
   style: Partial<TextStyle>;
 }> = [
-  { name: "Heading", text: "Heading", style: { fontSize: 72, fontWeight: 700 } },
-  { name: "Subtitle", text: "Subtitle text", style: { fontSize: 36, fontWeight: 400 } },
+  { name: "Heading", text: "Heading", style: { fontSize: 110, fontWeight: 700 } },
+  { name: "Subtitle", text: "Subtitle text", style: { fontSize: 64, fontWeight: 400 } },
   {
     name: "Lower Third",
     text: "Name Here",
     style: {
-      fontSize: 32,
+      fontSize: 54,
       fontWeight: 600,
       textAlign: "left",
       verticalAlign: "bottom",
@@ -145,61 +151,84 @@ export const TEXT_STYLE_PRESETS: ReadonlyArray<{
     name: "Caption",
     text: "Caption text here",
     style: {
-      fontSize: 24,
-      fontWeight: 400,
+      fontSize: 56,
+      fontWeight: 500,
       verticalAlign: "bottom",
       shadowColor: "rgba(0, 0, 0, 0.8)",
-      shadowBlur: 4,
-      shadowOffsetX: 1,
-      shadowOffsetY: 1,
+      shadowBlur: 7,
+      shadowOffsetX: 2,
+      shadowOffsetY: 2,
     },
   },
   {
     name: "Hero",
     text: "MAKE IT MOVE",
     style: {
-      fontSize: 112,
+      fontSize: 124,
       fontWeight: 900,
       letterSpacing: -2,
       lineHeight: 0.95,
-      strokeWidth: 3,
+      strokeWidth: 4,
     },
   },
   {
     name: "Quote",
     text: "“Tell a better story.”",
     style: {
-      fontSize: 54,
+      fontSize: 76,
       fontWeight: 600,
       fontStyle: "italic",
       lineHeight: 1.25,
       shadowColor: "rgba(0, 0, 0, 0.65)",
-      shadowBlur: 10,
-      shadowOffsetY: 4,
+      shadowBlur: 14,
+      shadowOffsetY: 6,
     },
   },
   {
     name: "Outline",
     text: "OUTLINE",
     style: {
-      fontSize: 80,
+      fontSize: 120,
       fontWeight: 900,
-      letterSpacing: 2,
+      letterSpacing: 3,
       strokeColor: "#111827",
-      strokeWidth: 5,
+      strokeWidth: 7,
     },
   },
   {
     name: "Badge",
     text: "NEW RELEASE",
     style: {
-      fontSize: 28,
+      fontSize: 46,
       fontWeight: 800,
-      letterSpacing: 3,
+      letterSpacing: 4,
       backgroundColor: "rgba(17, 24, 39, 0.88)",
     },
   },
 ];
+
+// A preset's style at the project's frame height (the base is 1920).
+export function scaledTextStyle(
+  style: Partial<TextStyle>,
+  frameHeight: number | undefined,
+): Partial<TextStyle> {
+  const k = frameHeight && frameHeight > 0 ? frameHeight / TEXT_PRESET_BASE_HEIGHT : 1;
+  const px = (v: number | undefined, round = false) =>
+    v === undefined ? undefined : round ? Math.max(8, Math.round(v * k)) : Math.round(v * k * 10) / 10;
+  const out: Partial<TextStyle> = { ...style };
+  const set = <K extends keyof TextStyle>(key: K, value: TextStyle[K] | undefined) => {
+    if (value !== undefined) (out as Record<string, unknown>)[key] = value;
+  };
+  set("fontSize", px(style.fontSize, true));
+  set("strokeWidth", px(style.strokeWidth));
+  set("letterSpacing", px(style.letterSpacing));
+  set("shadowBlur", px(style.shadowBlur));
+  set("shadowOffsetX", px(style.shadowOffsetX));
+  set("shadowOffsetY", px(style.shadowOffsetY));
+  return out;
+}
+
+const frameHeight = () => useProjectStore.getState().project?.settings?.height;
 
 const TAB_ICONS: Record<AssetsTab, React.ElementType> = {
   media: Video,
@@ -1436,7 +1465,7 @@ export const AssetsPanel: React.FC = () => {
                             playheadPosition,
                             "New Title",
                             5,
-                            DEFAULT_TITLE_STYLE,
+                            scaledTextStyle(DEFAULT_TITLE_STYLE, frameHeight()),
                           ),
                     );
                     if (created) {
@@ -1479,7 +1508,7 @@ export const AssetsPanel: React.FC = () => {
                                 playheadPosition,
                                 preset.text,
                                 5,
-                                preset.style,
+                                scaledTextStyle(preset.style, frameHeight()),
                               ),
                         );
                         if (created) {
