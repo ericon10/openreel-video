@@ -312,13 +312,18 @@ export class TitleEngine {
     const lines = metrics.lines.map((l) => l.text);
     const lineHeight = style.fontSize * style.lineHeight;
     const totalHeight = lines.length * lineHeight;
-    let startY = -totalHeight / 2 + lineHeight / 2;
-
-    if (style.verticalAlign === "top") {
-      startY = 0;
-    } else if (style.verticalAlign === "bottom") {
-      startY = -totalHeight;
-    }
+    // Character Studio embed (owner, 2026-10-22): the text block is always
+    // centered on its position, so the words sit inside the selection box
+    // the editor draws (geometry.ts). Upstream drew "bottom" captions
+    // (Caption, Lower Third) a whole block above it and "left" ones to the
+    // right of it. Alignment now lines the rows up inside the block.
+    const startY = -totalHeight / 2 + lineHeight / 2;
+    const blockWidth = metrics.width;
+    const lineX = (lineWidth: number) =>
+      style.textAlign === "left" ? -blockWidth / 2
+        : style.textAlign === "right" ? blockWidth / 2 - lineWidth
+          : -lineWidth / 2;
+    ctx.textAlign = "left";
 
     if (style.backgroundColor) {
       const bgWidth = metrics.width + 20;
@@ -348,13 +353,7 @@ export class TitleEngine {
         let xOffset = 0;
         let inWord = false;
 
-        const lineWidth = ctx.measureText(line).width;
-        const startX =
-          style.textAlign === "center"
-            ? -lineWidth / 2
-            : style.textAlign === "right"
-              ? -lineWidth
-              : 0;
+        const startX = lineX(ctx.measureText(line).width);
 
         for (const char of line) {
           if (/\s/.test(char)) inWord = false;
@@ -376,10 +375,10 @@ export class TitleEngine {
             if (style.strokeColor && style.strokeWidth) {
               ctx.strokeStyle = style.strokeColor;
               ctx.lineWidth = style.strokeWidth;
-              ctx.strokeText(char, 0, 0);
+              ctx.strokeText(char, -charWidth / 2, 0);
             }
             ctx.fillStyle = wordColor(wordIdx);
-            ctx.fillText(char, 0, 0);
+            ctx.fillText(char, -charWidth / 2, 0);
             ctx.restore();
 
             xOffset += charWidth;
@@ -393,32 +392,27 @@ export class TitleEngine {
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         const y = startY + i * lineHeight;
+        const lineWidth = ctx.measureText(line).width;
+        const startX = lineX(lineWidth);
 
         if (style.backgroundColor) {
-          const lineMetrics = ctx.measureText(line);
-          const bgWidth = lineMetrics.width + 20;
-          const bgHeight = lineHeight;
           ctx.fillStyle = style.backgroundColor;
-          ctx.fillRect(-bgWidth / 2, y - bgHeight / 2, bgWidth, bgHeight);
+          ctx.fillRect(startX - 10, y - lineHeight / 2, lineWidth + 20, lineHeight);
         }
 
         if (style.strokeColor && style.strokeWidth) {
           ctx.strokeStyle = style.strokeColor;
           ctx.lineWidth = style.strokeWidth;
-          ctx.strokeText(line, 0, y);
+          ctx.strokeText(line, startX, y);
         }
 
         if (lit < 0) {
           ctx.fillStyle = style.color;
-          ctx.fillText(line, 0, y);
+          ctx.fillText(line, startX, y);
           continue;
         }
         // Karaoke: the same line, filled word by word at the offsets the
         // whole line would have, so lit words sit exactly where they were.
-        const lineWidth = ctx.measureText(line).width;
-        const startX = style.textAlign === "center" ? -lineWidth / 2 : style.textAlign === "right" ? -lineWidth : 0;
-        const align = ctx.textAlign;
-        ctx.textAlign = "left";
         const re = /\S+/g;
         let m: RegExpExecArray | null;
         while ((m = re.exec(line))) {
@@ -427,7 +421,6 @@ export class TitleEngine {
           ctx.fillStyle = wordColor(wordIdx++);
           ctx.fillText(m[0], x, y);
         }
-        ctx.textAlign = align;
       }
     }
 

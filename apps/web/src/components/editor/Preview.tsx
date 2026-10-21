@@ -855,6 +855,7 @@ export const Preview: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoAreaRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
+  const textPressRef = useRef<{ x: number; y: number } | null>(null);
   const animationRef = useRef<number | null>(null);
   const renderBridgeInitialized = useRef<boolean>(false);
   const lastGoodFrameRef = useRef<ImageBitmap | null>(null);
@@ -7058,6 +7059,18 @@ export const Preview: React.FC = () => {
     [allTextClips, playheadPosition, timelineTracks, settings],
   );
 
+  // Character Studio embed (owner, 2026-10-22): a second click on a
+  // selected caption, without dragging it, edits the words in place, as in
+  // CapCut.
+  const pressText = (e: React.MouseEvent) => { textPressRef.current = { x: e.clientX, y: e.clientY }; };
+  const clickSelectedText = (e: React.MouseEvent) => {
+    const p = textPressRef.current;
+    textPressRef.current = null;
+    if (!p || !selectedTextClip || Math.hypot(e.clientX - p.x, e.clientY - p.y) > 4) return;
+    e.stopPropagation();
+    openInlineTextEdit(selectedTextClip);
+  };
+
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
       if (interactionMode === "none" || !interactionStartRef.current) return;
@@ -7990,6 +8003,8 @@ export const Preview: React.FC = () => {
                 onMouseDown={handleTextClipMouseDown}
                 onPointerDown={touchToMouse(handleTextClipMouseDown)}
                 onDoubleClick={(e) => { e.stopPropagation(); if (selectedTextClip) openInlineTextEdit(selectedTextClip); }}
+                onMouseDownCapture={pressText}
+                onClick={clickSelectedText}
               />
 
               {/* Move handle (center), small for text (owner, 2026-10-15). */}
@@ -7997,6 +8012,8 @@ export const Preview: React.FC = () => {
                 className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 bg-cyan-500/80 rounded-full flex items-center justify-center cursor-move pointer-events-auto touch-none hover:bg-cyan-500 transition-colors"
                 onMouseDown={handleTextClipMouseDown}
                 onPointerDown={touchToMouse(handleTextClipMouseDown)}
+                onMouseDownCapture={pressText}
+                onClick={clickSelectedText}
                 title="Drag to move text"
               >
                 <Move size={9} className="text-white" />
