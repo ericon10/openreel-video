@@ -396,6 +396,26 @@ async function exportFormat(width: number, height: number, fps: number): Promise
 // Done: export the timeline in this browser, upload it, and hand the Studio
 // the video and the project.
 export async function saveToStudio(p: StudioParams, media: Record<string, string>, onStep: (s: string) => void): Promise<void> {
+  let uploadId: string | null = null;
+  let exportError = "";
+  try {
+    uploadId = await exportAndUpload(p, onStep);
+  } catch (e) {
+    // The browser could not encode the video (owner, 2026-11-10: "Encoding
+    // error" on Done). The edit is kept anyway: the Studio makes the video
+    // from this timeline on its worker, captions and all.
+    exportError = ((e as Error)?.message || "The export did not finish.").slice(0, 300);
+    console.warn("[studio] browser export failed; the Studio renders the edit instead", e);
+    onStep("This browser could not make the video. Saving your edit; the Studio makes the video...");
+  }
+  if (!uploadId) onStep("Saving your edit; the Studio makes the video...");
+  await json(await fetch(`${p.api}/content/${p.post}/editor`, {
+    method: "POST", credentials: "same-origin", headers: { "content-type": "application/json", "x-studio-request": "1" },
+    body: JSON.stringify({ ...(uploadId ? { uploadId } : { exportError }), project: projectForStudio(media), stack: currentStack() }),
+  }));
+}
+
+async function exportAndUpload(p: StudioParams, onStep: (s: string) => void): Promise<string> {
   const engine = getExportEngine();
   if (!engine.isInitialized?.()) await engine.initialize();
   const project = store().project;
@@ -417,11 +437,7 @@ export async function saveToStudio(p: StudioParams, media: Record<string, string
   const result = step.value;
   if (!result.success) throw new Error(result.error?.message || "The export did not finish.");
   const blob = result.blob ?? file.blob(f.mime);
-  if (!blob.size) throw new Error("The export came out empty. Press Done again.");
+  if (!blob.size) throw new Error("The export came out empty.");
   onStep("Saving to the post...");
-  const uploadId = await upload(p, blob, `${p.post}-edit.${f.format}`);
-  await json(await fetch(`${p.api}/content/${p.post}/editor`, {
-    method: "POST", credentials: "same-origin", headers: { "content-type": "application/json", "x-studio-request": "1" },
-    body: JSON.stringify({ uploadId, project: projectForStudio(media), stack: currentStack() }),
-  }));
+  return upload(p, blob, `${p.post}-edit.${f.format}`);
 }

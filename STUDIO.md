@@ -43,7 +43,9 @@ caption), puts it on the timeline (each file from its fresh storage link
 Studio in parts of 4 MB; see `fetchBlob`), and Done exports in the browser (MP4 with H.264, or
 WebM with VP9 where the browser has no H.264 encoder), uploads it with
 the Studio's upload slots and posts the project back
-(`POST /api/v1/content/<id>/editor`). The Studio's worker makes the export
+(`POST /api/v1/content/<id>/editor`). If the browser cannot encode the video (an "Encoding error" on Done), Done
+still sends the project, with no video, and the Studio's worker renders it
+from the saved timeline. The Studio's worker makes the export
 a plain MP4 and keeps the project for the next edit.
 
 Presets (`packages/core/src/studio/presets.ts`): the edit library as data
